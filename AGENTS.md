@@ -14,15 +14,18 @@ Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the 
 - Server: `dart:io` `HttpServer`
 - HTTP client: `package:http`
 - Compile: `dart compile exe` -> single binary
+- Distribution: npm tarball with Node.js launcher wrapper
 
 ### File Structure
 ```
 commandcode-bridge/
-├── bin/commandcode_bridge.dart      # Entry point
+├── bin/
+│   ├── commandcode_bridge.dart      # Entry point
+│   └── commandcode-bridge.js        # npm wrapper: OS detection + binary spawn
 ├── lib/
 │   ├── commandcode_bridge.dart      # Barrel
 │   └── src/
-│       ├── main.dart                # CLI wiring
+│       ├── main.dart                # CLI wiring (run, run --server, help)
 │       ├── models/
 │       │   ├── account.dart         # Account + config store (port persist)
 │       │   └── models_db.dart       # 44 models with goAccessible field
@@ -33,14 +36,94 @@ commandcode-bridge/
 │       │   └── proxy.dart           # OpenAI-compatible proxy
 │       └── tui/
 │           └── app.dart             # Nocterm TUI (9 panels + log + bars)
+├── scripts/
+│   └── stage-npm-package.mjs       # CI packaging helper: assembles release tarball
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   └── bug-report.md           # Bug report template
+│   └── workflows/
+│       ├── test.yml                 # Dart analyze + test + smoke
+│       ├── release.yml              # Matrix build + tarball + GitHub release
+│       └── post-release.yml         # Install simulation from real asset
 ├── test/
 ├── AGENTS.md
+├── CHANGELOG.md
 ├── README.md
+├── package.json
 ├── build / run                      # Linux/macOS scripts
-├── build.bat / run.bat              # Windows scripts
+├── build.bat / run.bat              # Windows batch scripts
 ├── LICENSE
 └── pubspec.yaml
 ```
+
+### CLI Contract
+
+```bash
+commandcode-bridge run          Start the bridge in TUI mode
+commandcode-bridge run --server Start the bridge in headless server mode
+commandcode-bridge help         Show this help screen
+commandcode-bridge (no args)    Show this help screen
+commandcode-bridge <invalid>    Show help screen, exit 1
+```
+
+The npm wrapper (`bin/commandcode-bridge.js`) detects `process.platform`, maps to the correct native binary (`app-linux`, `app-mac`, `app-win.exe`), and spawns it with `stdio: 'inherit'`. All args are forwarded. Once launched, Node.js goes idle and the Dart binary takes full control.
+
+## Distribution
+
+### End-user install
+
+Users install from a `.tgz` asset attached to a GitHub Release:
+
+```bash
+npm install -g ./commandcode-bridge-vX.Y.Z.tgz
+commandcode-bridge run
+```
+
+Requirements: Node.js 18+ (for the npm launcher), a Command Code account.
+
+No Dart SDK needed for end-users.
+
+### Release workflow
+
+Triggered by pushing a tag matching `v*` or `[0-9]*`:
+
+1. **Build matrix** (3 OS):
+   - ubuntu-latest -> `app-linux`
+   - macos-latest -> `app-mac`
+   - windows-latest -> `app-win.exe`
+   - Each: `dart compile exe` + upload artifact
+2. **Package job** (ubuntu-latest, stable releases only):
+   - Download 3 binary artifacts
+   - Run `scripts/stage-npm-package.mjs` which assembles the npm package folder
+   - Run `npm pack` to produce `commandcode-bridge-vX.Y.Z.tgz`
+   - Upload tarball artifact
+3. **Release job** (stable releases only):
+   - Create GitHub Release with the tarball asset
+
+Stable releases exclude tags with `-rc`, `-beta`, `-alpha`. Prerelease tags produce binaries but skip packaging and release jobs.
+
+### Post-release validation
+
+Triggered by `release: published` or manual dispatch:
+
+1. Download the real published tarball from GitHub Releases
+2. Install to isolated npm prefix
+3. Verify `commandcode-bridge` command exists
+4. Smoke test headless mode (`commandcode-bridge run --server`)
+5. Uninstall
+
+### Tag strategy
+
+| Pattern | Type | Release behavior |
+|---------|------|------------------|
+| `v1.0.0` | Stable | Full build + package + GitHub Release |
+| `v1.0.1-rc1` | Prerelease | Build binaries only, no packaging or release |
+| `v1.0.1-beta1` | Prerelease | Build binaries only, no packaging or release |
+| `v1.0.1-alpha1` | Prerelease | Build binaries only, no packaging or release |
+
+### Why npm tarball instead of `npm install -g <git-url>`?
+
+npm v11 has a bug installing global git deps: the install appears to succeed (`added 1 package`) but the binary is missing. Always install from a local tarball. This pattern matches the approach used by `opencode-rich-presence`.
 
 ## Platform Support
 
@@ -173,14 +256,43 @@ Visualization uses `ProgressBar` from nocterm with color-coded fill:
 
 ## Build & Run
 
+### Developer (from source)
+
 ```bash
 # Linux / macOS
-./build           # Compile single binary
+./build           # dart pub get + dart compile exe
 ./run             # TUI mode (proxy auto-starts at 17077)
 ./run server      # Headless server mode
+./run help        # Show help
 
 # Windows
 build.bat         # Compile
 run.bat           # Run TUI
 run.bat server    # Headless server mode
 ```
+
+### End-user (from npm tarball)
+
+```bash
+npm install -g ./commandcode-bridge-vX.Y.Z.tgz
+commandcode-bridge run          # TUI mode
+commandcode-bridge run --server # Headless server mode
+commandcode-bridge help         # Show help
+```
+
+## Changelog
+
+This project maintains a `CHANGELOG.md` file. Release bodies include a short summary with a link to the changelog for full details.
+
+## Agent Maintenance Rules
+
+When making changes to this project, the AI agent must:
+
+1. **Sync CHANGELOG.md for every functional change.** Any feature, fix, or infrastructure change that affects end-users or developers must be recorded in CHANGELOG.md before the commit. This includes TUI changes, proxy fixes, infrastructure workflows, distribution changes, and documentation updates.
+
+2. **Sync versioning in release body when creating a release tag.** Before pushing a tag (stable, rc, beta, or alpha), verify that:
+   - The CHANGELOG.md has an entry for the new version
+   - The `package.json` version reflects the tag version (for stable releases)
+   - The release body in the workflow (`.github/workflows/release.yml`) generates accurate notes with the correct tag reference
+
+3. **Keep AGENTS.md in sync with the actual project state.** When adding new files, changing the CLI contract, or altering the build/distribution process, update the relevant sections in AGENTS.md in the same commit.

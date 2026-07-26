@@ -105,6 +105,10 @@ jobs:
           name: ${{ github.ref_name }}
           files: commandcode-bridge-*.tgz
           body: |
+            ## What's in ${{ github.ref_name }}
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for full details.
+
             ## Installation
 
             ```bash
@@ -115,6 +119,10 @@ jobs:
             commandcode-bridge run          # TUI mode
             commandcode-bridge run --server # Headless server mode
             ```
+
+            ### Why not `npm install -g Khip01/commandcode-bridge#${{ github.ref_name }}`?
+
+            npm v11 has a bug installing global git deps: the install appears to succeed but the `commandcode-bridge` binary is missing. Always install from a local tarball. See [Git-Based NPM Install/Distribution Workflow](https://opencode.ai) for the full story.
 
             ## Requirements
 
