@@ -12,9 +12,11 @@ class ProxyServer {
   final ConfigStore configStore;
   bool _running = false;
   String _currentModel = 'deepseek/deepseek-v4-flash';
+  int _modelVersion = 0;
 
   bool get isRunning => _running;
   String get currentModel => _currentModel;
+  int get modelVersion => _modelVersion;
 
   ProxyServer({required this.accountStore, required this.configStore});
 
@@ -91,6 +93,7 @@ class ProxyServer {
       final tools = _toWireTools(openaiReq['tools']);
 
       _currentModel = model;
+      _modelVersion++;
 
       if (stream) {
         await _proxyStreaming(

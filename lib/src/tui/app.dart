@@ -48,6 +48,7 @@ class AppState extends State<CmdBridgeApp> {
   bool _foregroundRefresh = true;
   DateTime? _lastAutoRefreshAt;
   int _lastLogVersion = -1;
+  int _lastModelVersion = 0;
 
   final _portCtrl = TextEditingController();
   bool _portScanDone = false;
@@ -116,6 +117,12 @@ class AppState extends State<CmdBridgeApp> {
 
     if (_showLog && _lastLogVersion != LogStore.version) {
       _lastLogVersion = LogStore.version;
+      setState(() {});
+      return;
+    }
+
+    if (_lastModelVersion != _proxy.modelVersion) {
+      _lastModelVersion = _proxy.modelVersion;
       setState(() {});
       return;
     }
@@ -1061,6 +1068,7 @@ class AppState extends State<CmdBridgeApp> {
         add('Proxy Configuration', Colors.cyan);
         add('');
         add('Status:      ${_proxy.isRunning ? "Running" : "Stopped"}');
+        add('Last Model:  ${_proxy.currentModel}');
         add('Port:        ${_config.config.serverPort}');
         add('Listen:      http://127.0.0.1:${_config.config.serverPort}');
         add('API URL:     ${_config.config.apiBaseUrl}');
