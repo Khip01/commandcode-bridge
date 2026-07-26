@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+echo "Getting dependencies..."
+dart pub get
+echo "Compiling..."
+dart compile exe bin/commandcode_bridge.dart -o bin/commandcode_bridge
+echo "Done! Binary at bin/commandcode_bridge"

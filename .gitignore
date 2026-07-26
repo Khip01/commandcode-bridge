@@ -1,0 +1,4 @@
+bin/commandcode_bridge
+.dart_tool/
+build/
+logs/
