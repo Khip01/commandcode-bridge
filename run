@@ -8,4 +8,9 @@ if [ ! -f "bin/commandcode_bridge" ]; then
   ./build
 fi
 
-exec bin/commandcode_bridge "$@"
+if [ "${1:-}" = "server" ]; then
+  shift
+  exec bin/commandcode_bridge run --server "$@"
+else
+  exec bin/commandcode_bridge run "$@"
+fi

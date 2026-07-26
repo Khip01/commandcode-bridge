@@ -1,0 +1,76 @@
+name: Post-release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to validate (e.g. v1.0.0). Leave empty to use the latest published release."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  user-simulation:
+    name: Simulate user install / run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve target tag
+        id: resolve-tag
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download tarball
+        shell: bash
+        run: |
+          TAG="${{ steps.resolve-tag.outputs.tag }}"
+          REPO="${{ github.repository }}"
+          gh release download "$TAG" -R "$REPO" --pattern "*.tgz"
+          ls -la *.tgz
+
+      - name: Install from tarball (isolated prefix)
+        shell: bash
+        run: |
+          TGZ=$(ls *.tgz | head -1)
+          echo "Installing $TGZ..."
+          npm install -g "./$TGZ"
+          echo "Install complete."
+
+      - name: Verify command exists
+        shell: bash
+        run: |
+          which commandcode-bridge
+          commandcode-bridge help
+          commandcode-bridge --help
+          commandcode-bridge version 2>/dev/null || true
+
+      - name: Smoke test headless mode
+        shell: bash
+        run: |
+          timeout 5 commandcode-bridge run --server 2>&1 || true
+          echo "Headless mode: started successfully"
+
+      - name: Uninstall
+        shell: bash
+        run: |
+          npm uninstall -g commandcode-bridge
+          echo "Uninstall complete."

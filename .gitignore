@@ -3,4 +3,9 @@ bin/commandcode_bridge.exe
 .dart_tool/
 build/
 logs/
-
+release-package/
+stage/
+*.tgz
+app-linux
+app-mac
+app-win.exe

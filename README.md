@@ -19,32 +19,68 @@ Turn your Command Code Go plan ($1/month) into an OpenAI-compatible API for use 
 - **Config Persistence** -- `~/.config/commandcode-bridge/config.json` survives updates
 - **Cross-platform** -- Linux (primary), macOS (experimental), Windows (experimental)
 
-## Prerequisites
+## Quick Install (no Dart SDK needed)
 
-- A Command Code account with active plan
-- Dart SDK 3.10+ (for building from source)
+```bash
+# Download the .tgz from GitHub Releases, then:
+npm install -g ./commandcode-bridge-v1.0.0.tgz
+
+# Run the bridge
+commandcode-bridge run          # TUI mode
+commandcode-bridge run --server # Headless server mode
+```
+
+**Requirements:** Node.js 18+, a Command Code account with active plan.
 
 ## Platform Support
 
-| Platform | Status | Clipboard | Build |
-|----------|--------|-----------|-------|
-| Linux | Primary (fully tested) | `wl-copy` -> `xclip` -> OSC 52 | `./build` |
-| macOS | Experimental | `pbcopy` -> OSC 52 | `./build` |
-| Windows | Experimental | `clip` -> OSC 52 | `build.bat` |
+| Platform | Status | Clipboard | Installation |
+|----------|--------|-----------|-------------|
+| Linux | Primary (fully tested) | `wl-copy` -> `xclip` -> OSC 52 | npm tarball |
+| macOS | Experimental | `pbcopy` -> OSC 52 | npm tarball |
+| Windows | Experimental | `clip` -> OSC 52 | npm tarball |
+
+## Prerequisites
+
+- A Command Code account with active plan
+- Node.js 18+ (for npm launcher)
+- Dart SDK 3.10+ (only for building from source)
 
 ## Quick Start
+
+### End-user (from npm tarball)
 
 ```bash
 # Login to Command Code (one-time)
 cmd login
 
-# Run the bridge (Linux/macOS)
-./run             # TUI mode (proxy auto-starts at 17077)
-./run server      # Headless server mode
+# Run the bridge
+commandcode-bridge run
 
-# Run the bridge (Windows)
-run.bat           # TUI mode
-run.bat server    # Headless server mode
+# Or headless server mode
+commandcode-bridge run --server
+
+# Show help
+commandcode-bridge help
+```
+
+### Developer (from source)
+
+```bash
+git clone <repo-url>
+cd commandcode-bridge
+./build           # dart pub get + dart compile exe
+./run             # TUI mode
+./run server      # Headless server mode
+./run help        # Show help
+```
+
+### Usage
+
+```
+commandcode-bridge run          Start the bridge in TUI mode
+commandcode-bridge run --server Start the bridge in headless server mode
+commandcode-bridge help         Show this help screen
 ```
 
 The bridge reads credentials from `~/.commandcode/auth.json` (same file as `cmd`).

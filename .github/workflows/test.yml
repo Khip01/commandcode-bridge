@@ -1,0 +1,57 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Dart ${{ matrix.dart }} / Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        dart: [stable]
+        node: [22]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.dart }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install Dart dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Run tests
+        run: dart test
+
+      - name: Smoke compile
+        run: dart compile exe bin/commandcode_bridge.dart -o app-linux
+
+      - name: CLI smoke test
+        run: |
+          ./app-linux help
+          ./app-linux --help
+          ! ./app-linux foo
+
+      - name: Validate npm package
+        run: npm pack --dry-run
+
+      - name: Validate wrapper syntax
+        run: node --check bin/commandcode-bridge.js

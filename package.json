@@ -1,0 +1,43 @@
+{
+  "name": "commandcode-bridge",
+  "version": "1.0.0",
+  "description": "Command Code single-account proxy bridge with TUI dashboard. OpenAI-compatible endpoint for OpenCode, Cursor, etc.",
+  "type": "module",
+  "bin": {
+    "commandcode-bridge": "./bin/commandcode-bridge.js"
+  },
+  "scripts": {
+    "postinstall": "node -e \"if(process.platform !== 'win32'){const fs=require('fs');['app-linux','app-mac'].forEach(f=>{try{fs.chmodSync('./bin-executables/'+f,0o755)}catch(e){}});}\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "commandcode",
+    "command-code",
+    "proxy",
+    "bridge",
+    "opencode",
+    "openai",
+    "cli",
+    "tui",
+    "cross-platform"
+  ],
+  "author": {
+    "name": "Khip01",
+    "url": "https://github.com/Khip01"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Khip01/commandcode-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Khip01/commandcode-bridge/issues"
+  },
+  "homepage": "https://github.com/Khip01/commandcode-bridge#readme",
+  "files": [
+    "bin/commandcode-bridge.js",
+    "bin-executables/"
+  ]
+}
