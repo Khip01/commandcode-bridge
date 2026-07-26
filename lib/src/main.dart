@@ -56,11 +56,13 @@ Future<void> main(List<String> args) async {
 
 Future<void> _waitForSignal() async {
   final completer = Completer<void>();
-  ProcessSignal.sigint.watch().listen((_) {
+  final sigintSub = ProcessSignal.sigint.watch().listen((_) {
     if (!completer.isCompleted) completer.complete();
   });
-  ProcessSignal.sigterm.watch().listen((_) {
+  final sigtermSub = ProcessSignal.sigterm.watch().listen((_) {
     if (!completer.isCompleted) completer.complete();
   });
-  return completer.future;
+  await completer.future;
+  await sigintSub.cancel();
+  await sigtermSub.cancel();
 }
