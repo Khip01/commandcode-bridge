@@ -833,7 +833,7 @@ class AppState extends State<CmdBridgeApp> {
             rows.add(Padding(
               padding: EdgeInsets.symmetric(vertical: 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('  ${_fmtDate(periodStart)}  to  ${_fmtDate(periodEnd)}', style: TextStyle(color: Colors.grey)),
+                Text('  ${_fmtDate(periodStart)}  to  ${_fmtDate(periodEnd)}  ($totalDays days)', style: TextStyle(color: Colors.grey)),
                 SizedBox(height: 1),
                 _bar(periodPct, Colors.blue, label: '${elapsedDays}d / ${totalDays}d elapsed'),
                 SizedBox(height: 1),
@@ -1002,7 +1002,7 @@ class AppState extends State<CmdBridgeApp> {
                   Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ]),
               SizedBox(height: 1),
-              Text('  Resets at: ${_fmtDate(c.fiveHour.resetTime)}',
+              Text('  Resets at: ${_fmtDate(c.fiveHour.resetTime)}  ${_relativeTime(c.fiveHour.resetTime)}',
                   style: TextStyle(color: Colors.grey)),
             ]),
           ));
@@ -1032,7 +1032,7 @@ class AppState extends State<CmdBridgeApp> {
                   Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ]),
               SizedBox(height: 1),
-              Text('  Resets at: ${_fmtDate(c.weekly.resetTime)}',
+              Text('  Resets at: ${_fmtDate(c.weekly.resetTime)}  ${_relativeTime(c.weekly.resetTime)}',
                   style: TextStyle(color: Colors.grey)),
             ]),
           ));
@@ -1564,6 +1564,23 @@ class AppState extends State<CmdBridgeApp> {
   String _fmtDate(DateTime? dt) {
     if (dt == null) return 'N/A';
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _relativeTime(DateTime target) {
+    final diff = target.difference(DateTime.now());
+    if (diff.isNegative) return '(overdue)';
+    if (diff.inDays >= 1) {
+      final hours = diff.inHours.remainder(24);
+      return '(in ${diff.inDays}d ${hours}h)';
+    }
+    if (diff.inHours >= 1) {
+      final mins = diff.inMinutes.remainder(60);
+      return '(in ${diff.inHours}h ${mins}m)';
+    }
+    if (diff.inMinutes >= 1) {
+      return '(in ${diff.inMinutes}m)';
+    }
+    return '(now)';
   }
 
   String _fmtNum(int n) {
