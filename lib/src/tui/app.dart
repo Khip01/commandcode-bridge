@@ -1063,7 +1063,7 @@ class AppState extends State<CmdBridgeApp> {
     String? lastDate;
     final dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    for (final entry in entries.reversed) {
+    for (final entry in entries) {
       final ds = '${entry.timestamp.year}-${entry.timestamp.month.toString().padLeft(2, '0')}-${entry.timestamp.day.toString().padLeft(2, '0')}';
       if (ds != lastDate) {
         lastDate = ds;
