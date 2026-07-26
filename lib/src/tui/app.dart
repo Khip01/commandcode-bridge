@@ -704,13 +704,13 @@ class AppState extends State<CmdBridgeApp> {
 
     return Row(
       children: [
-        Expanded(flex: 3, child: Padding(
+        Expanded(flex: 1, child: Padding(
           padding: const EdgeInsets.all(1),
           child: content,
         )),
         const SizedBox(width: 1),
         Expanded(
-          flex: 2,
+          flex: 1,
           child: Container(
             padding: const EdgeInsets.all(1),
             decoration: const BoxDecoration(
