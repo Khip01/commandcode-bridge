@@ -395,14 +395,28 @@ class AppState extends State<CmdBridgeApp> {
   }
 
   Future<bool> _copyNative(String text) async {
-    try {
-      final p = await _spawnAndPipe('wl-copy', [], text);
-      if (p) return true;
-    } catch (_) {}
-    try {
-      final p = await _spawnAndPipe('xclip', ['-selection', 'clipboard'], text);
-      if (p) return true;
-    } catch (_) {}
+    if (Platform.isLinux) {
+      try {
+        final p = await _spawnAndPipe('wl-copy', [], text);
+        if (p) return true;
+      } catch (_) {}
+      try {
+        final p = await _spawnAndPipe('xclip', ['-selection', 'clipboard'], text);
+        if (p) return true;
+      } catch (_) {}
+    }
+    if (Platform.isWindows) {
+      try {
+        final p = await _spawnAndPipe('clip', [], text);
+        if (p) return true;
+      } catch (_) {}
+    }
+    if (Platform.isMacOS) {
+      try {
+        final p = await _spawnAndPipe('pbcopy', [], text);
+        if (p) return true;
+      } catch (_) {}
+    }
     try {
       return ClipboardManager.copy(text);
     } catch (_) {
@@ -540,10 +554,11 @@ class AppState extends State<CmdBridgeApp> {
                 Text(' ($email)', style: TextStyle(color: Colors.grey)),
               const Spacer(),
               if (planName.isNotEmpty)
-                Text(planName,
-                    style: const TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.bold)),
-              Text(isRunning ? '  RUNNING' : '  STOPPED',
+                Text('  ${planName} Plan',
+                    style: TextStyle(
+                        color: planName.contains('Go') ? Colors.yellow : Colors.cyan,
+                        fontWeight: FontWeight.bold)),
+              Text(isRunning ? ' RUNNING' : ' STOPPED',
                   style: TextStyle(
                     color: isRunning ? Colors.green : Colors.red,
                     fontWeight: FontWeight.bold,
@@ -554,7 +569,8 @@ class AppState extends State<CmdBridgeApp> {
             children: [
               Text('\u25b8 http://127.0.0.1:${_config.config.serverPort}/v1',
                   style: const TextStyle(color: Colors.green)),
-              Text('  [c]opy', style: TextStyle(color: Colors.grey)),
+              Text('  [c]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+              Text('opy endpoint url', style: TextStyle(color: Colors.grey)),
               const Spacer(),
               Text('Last used: ${_proxy.currentModel}',
                   style: TextStyle(color: Colors.grey)),
@@ -657,6 +673,28 @@ class AppState extends State<CmdBridgeApp> {
       ));
     }
 
+    Component _bar(double value, Color color, {double height = 1, String? label}) {
+      return Row(children: [
+        SizedBox(
+          width: 40,
+          height: height,
+          child: ProgressBar(
+            value: value,
+            valueColor: color,
+            backgroundColor: Colors.grey,
+            fillCharacter: '█',
+            emptyCharacter: '░',
+          ),
+        ),
+        if (label != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 1),
+            child: Text(label, style: TextStyle(color: color)),
+          ),
+        const SizedBox(width: 1),
+      ]);
+    }
+
     switch (_infoPage) {
       case _InfoPage.account:
         add('Account Information', Colors.cyan);
@@ -675,24 +713,81 @@ class AppState extends State<CmdBridgeApp> {
         add('Plan & Billing', Colors.cyan);
         add('');
         if (s != null) {
-          add('Plan:       ${_planDisplayName(s.planId)} (${s.planId})');
-          add('Status:     ${s.status}');
-          add('Period:     ${_fmtIso(s.currentPeriodStart)}');
-          add('  to:       ${_fmtIso(s.currentPeriodEnd)}');
-          add('Renewal:    ${s.cancelAtPeriodEnd ? "Cancel at period end" : "Auto-renew"}');
+          rows.add(Row(children: [
+            Text('Plan:  ', style: TextStyle(color: Colors.grey)),
+            Text('${_planDisplayName(s.planId)}  ', style: TextStyle(color: s.planId.contains('go') ? Colors.yellow : Colors.cyan, fontWeight: FontWeight.bold)),
+            Text('(${s.planId})', style: TextStyle(color: Colors.grey)),
+            SizedBox(width: 1),
+            Text(s.status == 'active' ? '\u25cf Active' : '\u25cf ${s.status}',
+                style: TextStyle(color: s.status == 'active' ? Colors.green : Colors.red)),
+          ]));
+          add('');
+
+          // Period progress bar
+          final periodStart = DateTime.tryParse(s.currentPeriodStart);
+          final periodEnd = DateTime.tryParse(s.currentPeriodEnd);
+          if (periodStart != null && periodEnd != null) {
+            final totalDays = periodEnd.difference(periodStart).inDays;
+            final elapsedDays = DateTime.now().difference(periodStart).inDays;
+            final periodPct = (elapsedDays / totalDays).clamp(0.0, 1.0);
+            add('Billing Period:', Colors.cyan);
+            rows.add(Padding(
+              padding: EdgeInsets.symmetric(vertical: 0),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('  ${_fmtDate(periodStart)}  to  ${_fmtDate(periodEnd)}', style: TextStyle(color: Colors.grey)),
+                SizedBox(height: 1),
+                _bar(periodPct, Colors.blue, label: '${elapsedDays}d / ${totalDays}d elapsed'),
+                SizedBox(height: 1),
+                Text('  Renewal: ${s.cancelAtPeriodEnd ? "Cancels at period end" : "Auto-renews"}',
+                    style: TextStyle(color: s.cancelAtPeriodEnd ? Colors.yellow : Colors.green)),
+              ]),
+            ));
+            add('');
+          }
         } else {
           add('No subscription data');
         }
-        add('');
+
         add('Credits', Colors.cyan);
         add('');
         if (c != null) {
-          add('Monthly:     \$${c.monthlyCredits.toStringAsFixed(2)}');
-          add('Purchased:   \$${c.purchasedCredits.toStringAsFixed(2)}');
-          add('Free:        \$${c.freeCredits.toStringAsFixed(2)}');
-          add('Total:       \$${c.totalCredits.toStringAsFixed(2)}');
-          add('Threshold:   \$${c.creditThreshold.toStringAsFixed(2)}');
-          add('Below Thresh: ${c.belowThreshold ? "YES!" : "No"}');
+          final total = c.monthlyCredits + c.purchasedCredits + c.freeCredits;
+          final totalUsed = c.fiveHour.used; // approximate
+          final usagePct = total > 0 ? (totalUsed / total).clamp(0.0, 1.0) : 0.0;
+          final creditColor = usagePct > 0.8 ? Colors.red : (usagePct > 0.5 ? Colors.yellow : Colors.green);
+
+          // Overall credit usage bar
+          rows.add(Padding(
+            padding: EdgeInsets.symmetric(vertical: 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('  Total: \$${total.toStringAsFixed(2)}  (Used: \$${totalUsed.toStringAsFixed(4)})',
+                  style: TextStyle(color: Colors.grey)),
+              SizedBox(height: 1),
+              _bar(usagePct, creditColor, label: '${(usagePct * 100).toInt()}% used'),
+            ]),
+          ));
+          add('');
+
+          // Individual credit types
+          rows.add(Row(children: [
+            Text('  Monthly ', style: TextStyle(color: Colors.grey)),
+            Text('\$${c.monthlyCredits.toStringAsFixed(2)}', style: TextStyle(color: Colors.cyan)),
+          ]));
+          rows.add(Row(children: [
+            Text('  Purchased ', style: TextStyle(color: Colors.grey)),
+            Text('\$${c.purchasedCredits.toStringAsFixed(2)}', style: TextStyle(color: Colors.green)),
+          ]));
+          rows.add(Row(children: [
+            Text('  Free ', style: TextStyle(color: Colors.grey)),
+            Text('\$${c.freeCredits.toStringAsFixed(2)}', style: TextStyle(color: Colors.cyan)),
+          ]));
+          add('');
+          rows.add(Row(children: [
+            Text('  Threshold: \$${c.creditThreshold.toStringAsFixed(2)}', style: TextStyle(color: Colors.grey)),
+            SizedBox(width: 1),
+            Text(c.belowThreshold ? '  BELOW THRESHOLD!' : '',
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ]));
         } else {
           add('No credits data');
         }
@@ -702,48 +797,157 @@ class AppState extends State<CmdBridgeApp> {
         if (u == null) { add('No usage data'); break; }
         add('Usage Summary', Colors.cyan);
         add('');
-        add('Total Requests: ${u.totalCount}');
-        add('  Completed:    ${u.completedCount}');
-        add('  Failed:       ${u.failedCount}');
-        add('Success Rate:   ${u.successRate.toStringAsFixed(1)}%');
-        add('Total Cost:     \$${u.totalCost.toStringAsFixed(4)}');
-        add('Avg Cost/Req:   \$${u.averageCost.toStringAsFixed(6)}');
+
+        // Request counts
+        rows.add(Row(children: [
+          Text('  Requests: ', style: TextStyle(color: Colors.grey)),
+          Text('${u.completedCount} completed', style: TextStyle(color: Colors.green)),
+          Text(' / ${u.failedCount} failed', style: TextStyle(color: u.failedCount > 0 ? Colors.red : Colors.grey)),
+          Text(' (${u.totalCount} total)', style: TextStyle(color: Colors.grey)),
+        ]));
         add('');
+
+        // Success rate bar
+        final successRate = u.successRate / 100.0;
+        final rateColor = successRate > 0.99 ? Colors.green : (successRate > 0.9 ? Colors.yellow : Colors.red);
+        rows.add(Padding(
+          padding: EdgeInsets.symmetric(vertical: 0),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('  Success Rate', style: TextStyle(color: Colors.cyan)),
+            SizedBox(height: 1),
+            _bar(successRate, rateColor, label: '${u.successRate.toStringAsFixed(1)}%'),
+          ]),
+        ));
+        add('');
+
+        // Token usage bars
         add('Token Usage', Colors.cyan);
         add('');
-        add('Input Tokens:  ${_fmtNum(u.totalTokensIn)}');
-        add('Output Tokens: ${_fmtNum(u.totalTokensOut)}');
-        add('Total Tokens:  ${_fmtNum(u.totalTokens)}');
+        final totalTokens = u.totalTokensIn + u.totalTokensOut;
+        if (totalTokens > 0) {
+          final inRatio = u.totalTokensIn / totalTokens;
+          final outRatio = u.totalTokensOut / totalTokens;
+          rows.add(Padding(
+            padding: EdgeInsets.symmetric(vertical: 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('  Input:  ${_fmtNum(u.totalTokensIn)}', style: TextStyle(color: Colors.blue)),
+              SizedBox(height: 1),
+              _bar(inRatio, Colors.blue, height: 1),
+              SizedBox(height: 1),
+              Text('  Output: ${_fmtNum(u.totalTokensOut)}', style: TextStyle(color: Colors.green)),
+              SizedBox(height: 1),
+              _bar(outRatio, Colors.green, height: 1),
+              Text('  Total:  ${_fmtNum(u.totalTokens)}', style: TextStyle(color: Colors.grey)),
+            ]),
+          ));
+        }
         add('');
+
+        // Cost section
+        add('Cost', Colors.cyan);
+        add('');
+        rows.add(Row(children: [
+          Text('  Total: \$${u.totalCost.toStringAsFixed(4)}', style: TextStyle(color: Colors.yellow)),
+          SizedBox(width: 2),
+          Text('Avg: \$${u.averageCost.toStringAsFixed(6)}/req', style: TextStyle(color: Colors.grey)),
+        ]));
+        add('');
+
+        // Credits breakdown bars
         add('Credits Breakdown', Colors.cyan);
         add('');
-        add('Total Used:    \$${u.totalCredits.toStringAsFixed(4)}');
-        add('Monthly:       \$${u.totalMonthlyCredits.toStringAsFixed(4)}');
-        add('Free:          \$${u.totalFreeCredits.toStringAsFixed(4)}');
-        add('Purchased:     \$${u.totalPurchasedCredits.toStringAsFixed(4)}');
+        final totalCred = u.totalMonthlyCredits + u.totalFreeCredits + u.totalPurchasedCredits;
+        if (totalCred > 0) {
+          final monthlyPct = u.totalMonthlyCredits / totalCred;
+          final freePct = u.totalFreeCredits / totalCred;
+          rows.add(Padding(
+            padding: EdgeInsets.symmetric(vertical: 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('  Monthly: \$${u.totalMonthlyCredits.toStringAsFixed(4)}', style: TextStyle(color: Colors.cyan)),
+              SizedBox(height: 1),
+              _bar(monthlyPct, Colors.cyan, height: 1),
+              SizedBox(height: 1),
+              Text('  Free:    \$${u.totalFreeCredits.toStringAsFixed(4)}', style: TextStyle(color: Colors.green)),
+              SizedBox(height: 1),
+              _bar(freePct, Colors.green, height: 1),
+              SizedBox(height: 1),
+              Text('  Purchased: \$${u.totalPurchasedCredits.toStringAsFixed(4)}', style: TextStyle(color: Colors.yellow)),
+            ]),
+          ));
+        }
         break;
 
       case _InfoPage.limits:
         if (c == null) { add('No rate limit data'); break; }
         add('Rate Limits', Colors.cyan);
         add('');
-        add('Limited: ${c.fiveHour.cap > 0 ? "Yes" : "No"}');
-        add('');
+
+        // 5-Hour Window
         add('5-Hour Window', Colors.cyan);
         add('');
-        add('Used:      \$${c.fiveHour.used.toStringAsFixed(4)}');
-        add('Cap:       \$${c.fiveHour.cap.toStringAsFixed(2)}');
-        add('Remaining: \$${c.fiveHour.remaining.toStringAsFixed(4)}');
-        add('Exceeded:  ${c.fiveHour.exceeded ? "YES" : "No"}');
-        add('Resets at: ${_fmtDate(c.fiveHour.resetTime)}');
+        final fiveCap = c.fiveHour.cap;
+        if (fiveCap > 0) {
+          final fivePct = c.fiveHour.used / fiveCap;
+          final fiveColor = c.fiveHour.exceeded ? Colors.red : (fivePct > 0.8 ? Colors.yellow : Colors.green);
+          rows.add(Padding(
+            padding: EdgeInsets.symmetric(vertical: 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _bar(fivePct.clamp(0.0, 1.0), fiveColor,
+                  label: '\$${c.fiveHour.used.toStringAsFixed(4)} / \$${fiveCap.toStringAsFixed(2)}'),
+              SizedBox(height: 1),
+              Row(children: [
+                Text('  Remaining: \$${c.fiveHour.remaining.toStringAsFixed(4)}',
+                    style: TextStyle(color: c.fiveHour.remaining < 0.01 ? Colors.red : Colors.green)),
+                SizedBox(width: 2),
+                if (c.fiveHour.exceeded)
+                  Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              ]),
+              SizedBox(height: 1),
+              Text('  Resets at: ${_fmtDate(c.fiveHour.resetTime)}',
+                  style: TextStyle(color: Colors.grey)),
+            ]),
+          ));
+        } else {
+          add('  No 5-hour limit', Colors.grey);
+        }
         add('');
+
+        // Weekly Window
         add('Weekly Window', Colors.cyan);
         add('');
-        add('Used:      \$${c.weekly.used.toStringAsFixed(4)}');
-        add('Cap:       \$${c.weekly.cap.toStringAsFixed(2)}');
-        add('Remaining: \$${c.weekly.remaining.toStringAsFixed(4)}');
-        add('Exceeded:  ${c.weekly.exceeded ? "YES" : "No"}');
-        add('Resets at: ${_fmtDate(c.weekly.resetTime)}');
+        final weekCap = c.weekly.cap;
+        if (weekCap > 0) {
+          final weekPct = c.weekly.used / weekCap;
+          final weekColor = c.weekly.exceeded ? Colors.red : (weekPct > 0.8 ? Colors.yellow : Colors.green);
+          rows.add(Padding(
+            padding: EdgeInsets.symmetric(vertical: 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              _bar(weekPct.clamp(0.0, 1.0), weekColor,
+                  label: '\$${c.weekly.used.toStringAsFixed(4)} / \$${weekCap.toStringAsFixed(2)}'),
+              SizedBox(height: 1),
+              Row(children: [
+                Text('  Remaining: \$${c.weekly.remaining.toStringAsFixed(4)}',
+                    style: TextStyle(color: c.weekly.remaining < 0.01 ? Colors.red : Colors.green)),
+                SizedBox(width: 2),
+                if (c.weekly.exceeded)
+                  Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+              ]),
+              SizedBox(height: 1),
+              Text('  Resets at: ${_fmtDate(c.weekly.resetTime)}',
+                  style: TextStyle(color: Colors.grey)),
+            ]),
+          ));
+        } else {
+          add('  No weekly limit', Colors.grey);
+        }
+        add('');
+
+        // Limited status
+        rows.add(Row(children: [
+          Text('  Limited: ', style: TextStyle(color: Colors.grey)),
+          Text(c.fiveHour.cap > 0 || c.weekly.cap > 0 ? 'Yes' : 'No',
+              style: TextStyle(color: c.fiveHour.cap > 0 ? Colors.yellow : Colors.green)),
+        ]));
         break;
 
       case _InfoPage.models:
@@ -1173,10 +1377,6 @@ class AppState extends State<CmdBridgeApp> {
       child: Row(
         children: [
           Text(_status, style: TextStyle(color: _notifColor())),
-          if (_loadingData) ...[
-            const SizedBox(width: 1),
-            Text('...', style: TextStyle(color: _notifColor())),
-          ],
         ],
       ),
     );
@@ -1193,7 +1393,7 @@ class AppState extends State<CmdBridgeApp> {
         children: [
           Row(
             children: [
-              Text('Pages:', style: TextStyle(color: Colors.cyan)),
+              Text('Pages:', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
               for (var i = 0; i < _pageNames.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(left: 1),
@@ -1210,30 +1410,48 @@ class AppState extends State<CmdBridgeApp> {
           ),
           Row(
             children: [
-              Text('Actions:', style: TextStyle(color: Colors.cyan)),
-              Padding(
-                padding: const EdgeInsets.only(left: 1),
-                child: Text(
-                  _account.isLoaded
-                      ? '[c]opyURL [r]efresh [p]ort [h]elp [q]uit [\u2191][\u2193]scroll'
-                      : '[l]ogin [h]elp [q]uit',
-                  style: TextStyle(color: Colors.grey)),
-              ),
+              Text('Actions:', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+              if (_account.isLoaded) ...[
+                Text(' [c]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('opy endpoint url ', style: TextStyle(color: Colors.grey)),
+                Text('[r]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('efresh ', style: TextStyle(color: Colors.grey)),
+                Text('[p]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+                Text('ort ', style: TextStyle(color: Colors.grey)),
+                Text('[h]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('elp ', style: TextStyle(color: Colors.grey)),
+                Text('[q]', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('uit ', style: TextStyle(color: Colors.grey)),
+                Text('[\u2191][\u2193]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('scroll', style: TextStyle(color: Colors.grey)),
+              ] else ...[
+                Text(' [l]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('ogin ', style: TextStyle(color: Colors.grey)),
+                Text('[h]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('elp ', style: TextStyle(color: Colors.grey)),
+                Text('[q]', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('uit', style: TextStyle(color: Colors.grey)),
+              ],
               const Spacer(),
-              Text('Log:', style: TextStyle(color: Colors.cyan)),
-              Padding(
-                padding: const EdgeInsets.only(left: 1),
-                child: Text(
-                  _confirmClearLog
-                      ? 'Clear log? [Y]es [N]o'
-                      : _showLog && !_logFullscreen
-                          ? '[Ctrl+L]hide [f]ull [Shift+C]lear all [O]ld only clear'
-                          : _logFullscreen
-                              ? '[Ctrl+L]close [f]side [Shift+C]lear all [O]ld only clear'
-                              : '[Ctrl+L]show',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
+              if (_confirmClearLog) ...[
+                Text('Clear log? ', style: TextStyle(color: Colors.yellow)),
+                Text('[Y]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('es ', style: TextStyle(color: Colors.grey)),
+                Text('[N]', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('o', style: TextStyle(color: Colors.grey)),
+              ] else ...[
+                Text('Log:', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text(' [Ctrl+L]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+                Text(_showLog ? 'hide ' : 'show ', style: TextStyle(color: Colors.grey)),
+                if (_showLog) ...[
+                  Text('[f]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                  Text(_logFullscreen ? 'side ' : 'ull ', style: TextStyle(color: Colors.grey)),
+                  Text('[Shift+C]', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  Text('lear all ', style: TextStyle(color: Colors.grey)),
+                  Text('[O]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+                  Text('ld only clear', style: TextStyle(color: Colors.grey)),
+                ],
+              ],
             ],
           ),
         ],
@@ -1244,14 +1462,6 @@ class AppState extends State<CmdBridgeApp> {
   String _fmtDate(DateTime? dt) {
     if (dt == null) return 'N/A';
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _fmtIso(String iso) {
-    try {
-      return _fmtDate(DateTime.parse(iso));
-    } catch (_) {
-      return iso;
-    }
   }
 
   String _fmtNum(int n) {

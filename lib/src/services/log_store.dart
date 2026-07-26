@@ -33,8 +33,14 @@ class LogStore {
   static String? _logPath;
 
   static void init() {
-    final home = Platform.environment['HOME'] ?? '/root';
-    _logPath = '$home/.config/commandcode-bridge/logs.jsonl';
+    String home;
+    if (Platform.isWindows) {
+      home = Platform.environment['USERPROFILE'] ?? 'C:\\Users\\Default';
+    } else {
+      home = Platform.environment['HOME'] ?? '/root';
+    }
+    final sep = Platform.pathSeparator;
+    _logPath = '${home}${sep}.config${sep}commandcode-bridge${sep}logs.jsonl';
     final dir = File(_logPath!).parent;
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);

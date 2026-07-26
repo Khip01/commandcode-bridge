@@ -37,6 +37,13 @@ class AppAccount {
       };
 }
 
+String _homeDir() {
+  if (Platform.isWindows) {
+    return Platform.environment['USERPROFILE'] ?? 'C:\\Users\\Default';
+  }
+  return Platform.environment['HOME'] ?? '/root';
+}
+
 class AccountStore {
   AppAccount? _account;
   String? _error;
@@ -46,8 +53,8 @@ class AccountStore {
   bool get isLoaded => _account != null;
 
   void load() {
-    final home = Platform.environment['HOME'] ?? '/root';
-    final authFile = File('$home/.commandcode/auth.json');
+    final home = _homeDir();
+    final authFile = File('${home}${Platform.pathSeparator}.commandcode${Platform.pathSeparator}auth.json');
     if (!authFile.existsSync()) {
       _error = 'Auth file not found at $home/.commandcode/auth.json';
       return;
@@ -104,8 +111,8 @@ class ConfigStore {
   String? get error => _error;
 
   String get _configPath {
-    final home = Platform.environment['HOME'] ?? '/root';
-    return '$home/.config/commandcode-bridge/config.json';
+    final home = _homeDir();
+    return '${home}${Platform.pathSeparator}.config${Platform.pathSeparator}commandcode-bridge${Platform.pathSeparator}config.json';
   }
 
   void load() {

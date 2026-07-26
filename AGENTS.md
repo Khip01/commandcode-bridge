@@ -1,6 +1,6 @@
 # CommandCode Bridge
 
-Single-account proxy bridge for Command Code CLI (`cmd` from `commandcode.ai`). TUI dashboard + OpenAI-compatible HTTP proxy.
+Single-account proxy bridge for Command Code CLI (`cmd` from `commandcode.ai`). TUI dashboard with progress bars + OpenAI-compatible HTTP proxy.
 
 ## Auth
 
@@ -10,7 +10,7 @@ Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the 
 
 ### Stack
 - Language: Dart 3.10+
-- TUI: `nocterm` v0.8.0
+- TUI: `nocterm` v0.8.0 (ProgressBar for visualizations)
 - Server: `dart:io` `HttpServer`
 - HTTP client: `package:http`
 - Compile: `dart compile exe` -> single binary
@@ -32,15 +32,23 @@ commandcode-bridge/
 │       ├── server/
 │       │   └── proxy.dart           # OpenAI-compatible proxy
 │       └── tui/
-│           └── app.dart             # Nocterm TUI (9 panels + log)
+│           └── app.dart             # Nocterm TUI (9 panels + log + bars)
 ├── test/
 ├── AGENTS.md
 ├── README.md
-├── build                            # Build script
-├── run                              # Run script
+├── build / run                      # Linux/macOS scripts
+├── build.bat / run.bat              # Windows scripts
 ├── LICENSE
 └── pubspec.yaml
 ```
+
+## Platform Support
+
+| Platform | Status | Clipboard | Build |
+|----------|--------|-----------|-------|
+| Linux | Primary | `wl-copy` -> `xclip` -> OSC 52 | `./build` |
+| macOS | Experimental | `pbcopy` -> OSC 52 | `./build` |
+| Windows | Experimental | `clip` -> OSC 52 | `build.bat` |
 
 ## API Endpoints (Command Code)
 
@@ -110,7 +118,7 @@ Empty input = reset to default.
 
 ## Notifications
 
-Status bar between content and footer, color-coded:
+Status bar between content and keymap footer, color-coded:
 - Green: success (data refreshed, copied)
 - Cyan: info (fetching, copying)
 - Yellow: warning (clear confirm, restart required)
@@ -118,20 +126,30 @@ Status bar between content and footer, color-coded:
 
 ## Clipboard
 
-Copy to clipboard via `wl-copy` -> `xclip` -> OSC 52 fallback.
+Copy to clipboard via platform-specific tools, fallback to OSC 52:
+- Linux: `wl-copy` -> `xclip` -> OSC 52
+- macOS: `pbcopy` -> OSC 52
+- Windows: `clip` -> OSC 52
+
+Copy triggers:
 - `[c]` -- Copy endpoint URL (`http://127.0.0.1:17077/v1`)
 - `[Enter]` on model page -- Copy selected model codename
 
 ## TUI Pages
 
-| Key | Page | API Endpoints Used |
-|-----|------|--------------------|
-| `1` | Account | `/alpha/whoami` |
-| `2` | Plan & Billing | `/alpha/billing/subscriptions` + `/alpha/billing/credits` |
-| `3` | Usage | `/alpha/usage/summary` |
-| `4` | Rate Limits | `/alpha/billing/credits` (windowLimits) |
-| `5` | Models | `_orderedModels` (sorted by plan, 44 total) |
-| `6` | Proxy Config | Bridge state + endpoints |
+| Key | Page | API Endpoints Used | Visuals |
+|-----|------|--------------------|---------|
+| `1` | Account | `/alpha/whoami` | Text info |
+| `2` | Plan & Billing | `/alpha/billing/subscriptions` + `/alpha/billing/credits` | Progress bars for period elapsed, credit usage, individual credit types |
+| `3` | Usage | `/alpha/usage/summary` | Success rate bar, input/output token bars, credit breakdown bars, cost |
+| `4` | Rate Limits | `/alpha/billing/credits` (windowLimits) | 5-hour and weekly usage bars with exceed warnings, remaining, reset times |
+| `5` | Models | `_orderedModels` (sorted by plan, 44 total) | Text list with copy-on-Enter |
+| `6` | Proxy Config | Bridge state + endpoints | Text info |
+
+Visualization uses `ProgressBar` from nocterm with color-coded fill:
+- Green: good (< 80% usage)
+- Yellow: warning (80-100% usage)
+- Red: critical (> 100%, over limit, exceeded)
 
 ## Key Bindings
 
@@ -148,15 +166,21 @@ Copy to clipboard via `wl-copy` -> `xclip` -> OSC 52 fallback.
 | `Enter` | Models page | Copy selected model ID to clipboard |
 | `Ctrl+L` | Always | Toggle log sidebar |
 | `f` | Log open | Toggle log fullscreen / sidebar |
-| `Shift+C` | Log open | Clear all logs (with confirmation) |
-| `O` | Log open | Clear logs before today (with confirmation) |
+| `Shift+C` | Log open | Clear all logs (with Y/N confirmation) |
+| `O` | Log open | Clear logs before today (with Y/N confirmation) |
 | `l` | Not auth'd | Open login instructions panel |
 | `Esc` | Sub-panels | Back to main |
 
 ## Build & Run
 
 ```bash
+# Linux / macOS
 ./build           # Compile single binary
 ./run             # TUI mode (proxy auto-starts at 17077)
 ./run server      # Headless server mode
+
+# Windows
+build.bat         # Compile
+run.bat           # Run TUI
+run.bat server    # Headless server mode
 ```

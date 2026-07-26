@@ -1,26 +1,36 @@
 # CommandCode Bridge
 
-Single-account proxy bridge for [Command Code](https://commandcode.ai) CLI (`cmd`). TUI dashboard + OpenAI-compatible HTTP proxy endpoint.
+Single-account proxy bridge for [Command Code](https://commandcode.ai) CLI (`cmd`). TUI dashboard with progress bars + OpenAI-compatible HTTP proxy endpoint.
 
 Turn your Command Code Go plan ($1/month) into an OpenAI-compatible API for use with OpenCode, Cursor, or any OpenAI client.
 
+<img width="1901" height="927" alt="Screenshot" src="https://github.com/user-attachments/assets/c174095e-0bdd-4197-a152-bf6fd7f34056" />
+
 ## Features
 
-- **TUI Dashboard** -- 6 info pages showing all API data (account, plan, usage, rate limits, models, proxy config)
-- **OpenAI-Compatible Proxy** -- Use any OpenAI SDK/CLI pointing to `http://127.0.0.1:17077/v1`
-- **Model Reference** -- 44 embedded models with Go/Pro plan access indicators
-- **Rate Limit Monitor** -- Track 5-hour and weekly window caps in real-time
-- **Real-time Log** -- Sidebar with timestamped activity, fullscreen mode, confirmation before clear
+- **TUI Dashboard** -- 6 info pages (account, plan, usage, rate limits, models, proxy config)
+- **Progress Bars** -- Visual bars for credit usage, billing period, success rate, token ratios, rate limits
 - **Plan-Aware UI** -- Models sorted by plan (Go = opensource first, Pro+ = premium first)
+- **OpenAI-Compatible Proxy** -- Use any OpenAI SDK/CLI pointing to `http://127.0.0.1:17077/v1`
+- **Real-time Log** -- Sidebar with timestamped activity, fullscreen mode, confirmation before clear
 - **Port Config** -- Change port via `[p]` panel with availability scan, persisted in config
 - **Clipboard** -- Copy endpoint URL (`[c]`) or model codename (`[Enter]`)
 - **Color-coded Notifications** -- Green (success), Cyan (info), Yellow (warning), Red (error)
 - **Config Persistence** -- `~/.config/commandcode-bridge/config.json` survives updates
+- **Cross-platform** -- Linux (primary), macOS (experimental), Windows (experimental)
 
 ## Prerequisites
 
 - A Command Code account with active plan
 - Dart SDK 3.10+ (for building from source)
+
+## Platform Support
+
+| Platform | Status | Clipboard | Build |
+|----------|--------|-----------|-------|
+| Linux | Primary (fully tested) | `wl-copy` -> `xclip` -> OSC 52 | `./build` |
+| macOS | Experimental | `pbcopy` -> OSC 52 | `./build` |
+| Windows | Experimental | `clip` -> OSC 52 | `build.bat` |
 
 ## Quick Start
 
@@ -28,9 +38,13 @@ Turn your Command Code Go plan ($1/month) into an OpenAI-compatible API for use 
 # Login to Command Code (one-time)
 cmd login
 
-# Run the bridge
+# Run the bridge (Linux/macOS)
 ./run             # TUI mode (proxy auto-starts at 17077)
 ./run server      # Headless server mode
+
+# Run the bridge (Windows)
+run.bat           # TUI mode
+run.bat server    # Headless server mode
 ```
 
 The bridge reads credentials from `~/.commandcode/auth.json` (same file as `cmd`).
@@ -87,20 +101,73 @@ All at `http://127.0.0.1:17077/v1`:
 
 ### Header
 ```
-CommandCode Bridge  OpenAI Compatible | Khip01 (user@email.com)         Go Plan  RUNNING
-  http://127.0.0.1:17077/v1  [c]opy                              Last used: deepseek/deepseek-v4-flash
+CommandCode Bridge  OpenAI Compatible | Khip01 (user@email.com)           Go Plan  RUNNING
+  http://127.0.0.1:17077/v1  [c]opy endpoint url                   Last used: deepseek/deepseek-v4-flash
 ```
 
 ### Pages
 
-| Key | Page | Data Source |
-|-----|------|-------------|
-| `1` | Account | `/alpha/whoami` -- name, email, username, user ID |
-| `2` | Plan & Billing | `/alpha/billing/subscriptions` + `/alpha/billing/credits` |
-| `3` | Usage | `/alpha/usage/summary` -- tokens, cost, success rate |
-| `4` | Rate Limits | 5-hour & weekly window caps, reset times |
-| `5` | Models | 44 models sorted by plan access, copy on Enter |
-| `6` | Proxy Config | Port, API URL, endpoints, uptime, API key info |
+| Key | Page | Data Source | Visuals |
+|-----|------|-------------|---------|
+| `1` | Account | `/alpha/whoami` | Text info (name, email, user ID) |
+| `2` | Plan & Billing | `/alpha/billing/subscriptions` + `/alpha/billing/credits` | Progress bars for billing period, credit usage |
+| `3` | Usage | `/alpha/usage/summary` | Success rate bar, token bars, cost breakdown |
+| `4` | Rate Limits | `/alpha/billing/credits` windowLimits | 5-hour and weekly usage bars with exceed warnings |
+| `5` | Models | 44 models sorted by plan access | Scrollable list, Enter to copy codename |
+| `6` | Proxy Config | Bridge state | Port, API URL, endpoints, uptime |
+
+### Visualizations (Pages 2-4)
+
+**Plan & Billing:**
+```
+Plan:  Go Plan (individual-go)  ● Active
+Billing Period:
+  2026-07-26 to 2026-08-26
+  ████████████████████░░░  15d / 30d elapsed
+  Renewal: Auto-renews
+
+Credits
+  Total: $10.00  (Used: $0.02)
+  ██░░░░░░░░░░░░░░░░░░░░  0% used
+  Monthly: $10.00
+  Purchased: $0.00
+  Free: $0.00
+  Threshold: $0.00
+```
+
+**Usage:**
+```
+Usage Summary
+  Requests: 3 completed / 0 failed (3 total)
+
+Success Rate
+  ██████████████████████  100.0%
+
+Token Usage
+  Input:  28.2K     ██████████████████████
+  Output: 209       ░░░░░░░░░░░░░░░░░░░░░░
+  Total:  28.4K
+
+Cost
+  Total: $0.0235  Avg: $0.000008/req
+
+Credits Breakdown
+  Monthly: $0.0235  ██████████████████████
+  Free:    $0.0000  ░░░░░░░░░░░░░░░░░░░░░░
+```
+
+**Rate Limits:**
+```
+5-Hour Window
+  ████████░░░░░░░░░░░░░░  $0.02 / $3.00
+  Remaining: $2.98
+  Resets at: 2026-07-26 15:00
+
+Weekly Window
+  ████░░░░░░░░░░░░░░░░░░  $0.02 / $6.00
+  Remaining: $5.98
+  Resets at: 2026-08-01 15:00
+```
 
 ### Key Bindings
 
@@ -140,7 +207,7 @@ Press `[p]` to open port config panel:
 
 ## Plan Access
 
-Models in page 5 are prioritized by your plan. `_orderedModels` sorted as:
+Models in page 5 are prioritized by your plan. Sorted as:
 
 | Plan | Sort Order | Accessible |
 |------|-----------|------------|
@@ -204,6 +271,7 @@ commandcode-bridge/
 ├── test/
 ├── AGENTS.md
 ├── build / run                       # Shell scripts
+├── build.bat / run.bat               # Windows batch scripts
 ├── LICENSE
 └── pubspec.yaml
 ```

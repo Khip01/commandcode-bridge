@@ -1,4 +1,6 @@
 bin/commandcode_bridge
+bin/commandcode_bridge.exe
 .dart_tool/
 build/
 logs/
+
