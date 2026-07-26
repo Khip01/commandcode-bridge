@@ -31,8 +31,12 @@ class LogStore {
   static const int maxEntries = 2000;
   static final Queue<LogEntry> _entries = Queue();
   static String? _logPath;
+  static int _version = 0;
+
+  static int get version => _version;
 
   static void init() {
+    _entries.clear();
     String home;
     if (Platform.isWindows) {
       home = Platform.environment['USERPROFILE'] ?? 'C:\\Users\\Default';
@@ -46,6 +50,7 @@ class LogStore {
       dir.createSync(recursive: true);
     }
     _loadFromFile();
+    _version++;
   }
 
   static void _loadFromFile() {
@@ -92,6 +97,7 @@ class LogStore {
       _entries.removeFirst();
       _rewriteFile();
     }
+    _version++;
   }
 
   static void debug(String msg) => add(LogLevel.debug, msg);
@@ -112,6 +118,7 @@ class LogStore {
     if (_logPath != null) {
       File(_logPath!).writeAsStringSync('');
     }
+    _version++;
   }
 
   static void clearBeforeToday() {
@@ -119,6 +126,7 @@ class LogStore {
     final today = DateTime(now.year, now.month, now.day);
     _entries.removeWhere((e) => e.timestamp.isBefore(today));
     _rewriteFile();
+    _version++;
   }
 
   static int countBeforeToday() {

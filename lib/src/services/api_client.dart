@@ -190,74 +190,86 @@ class ApiClient {
         'x-cli-environment': 'production',
       };
 
-  Future<WhoamiData?> fetchWhoami() async {
+  Future<WhoamiData?> fetchWhoami({bool logErrors = true}) async {
     try {
       final res = await _client.get(
         Uri.parse('$baseUrl/alpha/whoami'),
         headers: _headers,
       );
       if (res.statusCode != 200) {
-        LogStore.error('whoami returned ${res.statusCode}');
+        if (logErrors) LogStore.error('whoami returned ${res.statusCode}');
         return null;
       }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (data['success'] != true) return null;
       return WhoamiData.fromJson(data['user'] as Map<String, dynamic>);
     } catch (e) {
-      LogStore.error('whoami failed: $e');
+      if (logErrors) LogStore.error('whoami failed: $e');
       return null;
     }
   }
 
-  Future<CreditsData?> fetchCredits() async {
+  Future<CreditsData?> fetchCredits({bool logErrors = true}) async {
     try {
       final res = await _client.get(
         Uri.parse('$baseUrl/alpha/billing/credits'),
         headers: _headers,
       );
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) {
+        if (logErrors) LogStore.error('credits returned ${res.statusCode}');
+        return null;
+      }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return CreditsData.fromJson(data);
-    } catch (_) {
+    } catch (e) {
+      if (logErrors) LogStore.error('credits failed: $e');
       return null;
     }
   }
 
-  Future<SubscriptionData?> fetchSubscription() async {
+  Future<SubscriptionData?> fetchSubscription({bool logErrors = true}) async {
     try {
       final res = await _client.get(
         Uri.parse('$baseUrl/alpha/billing/subscriptions'),
         headers: _headers,
       );
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) {
+        if (logErrors) LogStore.error('subscription returned ${res.statusCode}');
+        return null;
+      }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final subData = data['data'] as Map<String, dynamic>?;
       if (subData == null) return null;
       return SubscriptionData.fromJson(subData);
-    } catch (_) {
+    } catch (e) {
+      if (logErrors) LogStore.error('subscription failed: $e');
       return null;
     }
   }
 
-  Future<UsageSummaryData?> fetchUsage() async {
+  Future<UsageSummaryData?> fetchUsage({bool logErrors = true}) async {
     try {
       final res = await _client.get(
         Uri.parse('$baseUrl/alpha/usage/summary'),
         headers: _headers,
       );
-      if (res.statusCode != 200) return null;
+      if (res.statusCode != 200) {
+        if (logErrors) LogStore.error('usage returned ${res.statusCode}');
+        return null;
+      }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       return UsageSummaryData.fromJson(data);
-    } catch (_) {
+    } catch (e) {
+      if (logErrors) LogStore.error('usage failed: $e');
       return null;
     }
   }
 
-  Future<AllApiData> fetchAll() async {
-    final whoamiF = fetchWhoami();
-    final creditsF = fetchCredits();
-    final subF = fetchSubscription();
-    final usageF = fetchUsage();
+  Future<AllApiData> fetchAll({bool logSummary = true, bool logErrors = true}) async {
+    final whoamiF = fetchWhoami(logErrors: logErrors);
+    final creditsF = fetchCredits(logErrors: logErrors);
+    final subF = fetchSubscription(logErrors: logErrors);
+    final usageF = fetchUsage(logErrors: logErrors);
 
     final results = await Future.wait([whoamiF, creditsF, subF, usageF]);
     final errors = <String>[];
@@ -266,7 +278,9 @@ class ApiClient {
     if (results[2] == null) errors.add('subscription');
     if (results[3] == null) errors.add('usage');
 
-    LogStore.info('Fetched API data (${errors.isEmpty ? "all ok" : "errors: ${errors.join(",")}"})');
+    if (logSummary) {
+      LogStore.info('Fetched API data (${errors.isEmpty ? "all ok" : "errors: ${errors.join(",")}"})');
+    }
 
     return AllApiData(
       whoami: results[0] as WhoamiData?,

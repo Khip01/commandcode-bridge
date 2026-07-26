@@ -40,10 +40,14 @@ class AppState extends State<CmdBridgeApp> {
   bool _logFullscreen = false;
   String _status = '';
   Timer? _statusTimer;
+  Timer? _pageRefreshTimer;
   DateTime _startTime = DateTime.now();
 
   AllApiData? _apiData;
   bool _loadingData = false;
+  bool _foregroundRefresh = true;
+  DateTime? _lastAutoRefreshAt;
+  int _lastLogVersion = -1;
 
   final _portCtrl = TextEditingController();
   bool _portScanDone = false;
@@ -60,15 +64,83 @@ class AppState extends State<CmdBridgeApp> {
   void initState() {
     super.initState();
     _refreshData();
+    _startActivePageRefresh();
   }
 
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _pageRefreshTimer?.cancel();
     _portCtrl.dispose();
     _infoScrollCtrl.dispose();
     _logScrollCtrl.dispose();
     super.dispose();
+  }
+
+  Duration _refreshIntervalForPage(_InfoPage page) {
+    switch (page) {
+      case _InfoPage.account:
+        return const Duration(seconds: 20);
+      case _InfoPage.plan:
+        return const Duration(seconds: 15);
+      case _InfoPage.usage:
+        return const Duration(seconds: 8);
+      case _InfoPage.limits:
+        return const Duration(seconds: 8);
+      case _InfoPage.models:
+        return const Duration(seconds: 30);
+      case _InfoPage.proxy:
+        return const Duration(seconds: 1);
+    }
+  }
+
+  void _startActivePageRefresh() {
+    _pageRefreshTimer?.cancel();
+    _pageRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _refreshVisiblePage();
+    });
+  }
+
+  String _refreshLabel() {
+    if (_loadingData && !_foregroundRefresh) return 'Refreshing in background';
+    if (_lastAutoRefreshAt == null) return 'Idle';
+    final secs = DateTime.now().difference(_lastAutoRefreshAt!).inSeconds;
+    return 'Updated ${secs}s ago';
+  }
+
+  void _refreshVisiblePage() {
+    if (!mounted || _panel != _Panel.main) return;
+
+    final now = DateTime.now();
+    final interval = _refreshIntervalForPage(_infoPage);
+
+    if (_showLog && _lastLogVersion != LogStore.version) {
+      _lastLogVersion = LogStore.version;
+      setState(() {});
+      return;
+    }
+
+    if (_infoPage == _InfoPage.proxy) {
+      setState(() {});
+      return;
+    }
+
+    if (_loadingData) return;
+    if (_lastAutoRefreshAt != null && now.difference(_lastAutoRefreshAt!) < interval) {
+      return;
+    }
+
+    _lastAutoRefreshAt = now;
+    _refreshData(silent: true, foreground: false);
+  }
+
+  void _setInfoPage(_InfoPage page) {
+    _infoPage = page;
+    _selectedModelIndex = 0;
+    _infoScrollCtrl.jumpTo(0);
+    _lastAutoRefreshAt = null;
+    _refreshVisiblePage();
+    setState(() {});
   }
 
   Color _notifColor() {
@@ -115,6 +187,7 @@ class AppState extends State<CmdBridgeApp> {
           e.logicalKey == LogicalKey.enter ||
           e.logicalKey == LogicalKey.space) {
         _panel = _Panel.main;
+        _startActivePageRefresh();
         setState(() {});
         return true;
       }
@@ -130,6 +203,7 @@ class AppState extends State<CmdBridgeApp> {
       if (e.logicalKey == LogicalKey.keyN ||
           e.logicalKey == LogicalKey.escape) {
         _panel = _Panel.main;
+        _startActivePageRefresh();
         setState(() {});
         return true;
       }
@@ -139,6 +213,7 @@ class AppState extends State<CmdBridgeApp> {
     if (_panel == _Panel.login || _panel == _Panel.importKey) {
       if (e.logicalKey == LogicalKey.escape) {
         _panel = _Panel.main;
+        _startActivePageRefresh();
         setState(() {});
         return true;
       }
@@ -153,6 +228,7 @@ class AppState extends State<CmdBridgeApp> {
     if (_panel == _Panel.portConfig) {
       if (e.logicalKey == LogicalKey.escape) {
         _panel = _Panel.main;
+        _startActivePageRefresh();
         setState(() {});
         return true;
       }
@@ -167,6 +243,7 @@ class AppState extends State<CmdBridgeApp> {
       if (e.logicalKey == LogicalKey.keyL && e.isControlPressed) {
         _showLog = !_showLog;
         if (_showLog) _logFullscreen = false;
+        _lastLogVersion = LogStore.version;
         setState(() {});
         return true;
       }
@@ -210,6 +287,7 @@ class AppState extends State<CmdBridgeApp> {
         if (e.logicalKey == LogicalKey.keyL && e.isControlPressed) {
           _showLog = false;
           _logFullscreen = false;
+          _lastLogVersion = LogStore.version;
           setState(() {});
           return true;
         }
@@ -228,14 +306,11 @@ class AppState extends State<CmdBridgeApp> {
               : e.logicalKey == LogicalKey.digit4 ? 3
               : e.logicalKey == LogicalKey.digit5 ? 4
               : 5;
-          _infoPage = _InfoPage.values[idx];
-          _selectedModelIndex = 0;
-          _infoScrollCtrl.jumpTo(0);
-          setState(() {});
+          _setInfoPage(_InfoPage.values[idx]);
           return true;
 
         case LogicalKey.keyR:
-          _refreshData();
+          _refreshData(foreground: true);
           return true;
 
         case LogicalKey.keyC:
@@ -322,34 +397,48 @@ class AppState extends State<CmdBridgeApp> {
     _infoScrollCtrl.jumpTo(offset);
   }
 
-  void _refreshData() async {
+  void _refreshData({bool silent = false, bool foreground = true}) async {
     if (_loadingData) return;
     final acc = _account.account;
     if (acc == null) {
-      _setStatus('No API key. Run cmd login first.', duration: 5);
+      if (!silent) {
+        _setStatus('No API key. Run cmd login first.', duration: 5);
+      }
       return;
     }
     _loadingData = true;
-    _setStatus('Fetching data...');
-    setState(() {});
+    _foregroundRefresh = foreground;
+    if (!silent) {
+      _setStatus('Fetching data...');
+    }
+    if (foreground) {
+      setState(() {});
+    }
 
     final client = ApiClient(apiKey: acc.apiKey, config: _config.config);
     try {
-      _apiData = await client.fetchAll();
-      LogStore.info('Data refresh completed');
-      _setStatus('Data refreshed', duration: 3);
+      _apiData = await client.fetchAll(logSummary: !silent, logErrors: !silent);
+      if (!silent) {
+        LogStore.info('Data refresh completed');
+        _setStatus('Data refreshed', duration: 3);
+      }
     } catch (e) {
       LogStore.error('Data refresh failed: $e');
-      _setStatus('Refresh failed', duration: 5);
+      if (!silent) {
+        _setStatus('Refresh failed', duration: 5);
+      }
     } finally {
       client.dispose();
       _loadingData = false;
+      _foregroundRefresh = true;
+      _lastLogVersion = LogStore.version;
       if (mounted) setState(() {});
     }
   }
 
   void _doQuit() {
     _statusTimer?.cancel();
+    _pageRefreshTimer?.cancel();
     _proxy.stop();
     LogStore.info('Bridge stopped');
     shutdownApp();
@@ -461,6 +550,7 @@ class AppState extends State<CmdBridgeApp> {
     _portScanDone = false;
     _portStatus.clear();
     _panel = _Panel.portConfig;
+    _pageRefreshTimer?.cancel();
     _scanPorts();
     _setStatus('Enter port or select available. Empty = reset to default.');
     setState(() {});
@@ -516,6 +606,7 @@ class AppState extends State<CmdBridgeApp> {
         _config.save();
         _setStatus('Port set to $n. Restart required.', duration: 5);
         _panel = _Panel.main;
+        _startActivePageRefresh();
         LogStore.info('Port changed to $n (restart required)');
         if (mounted) setState(() {});
       }).catchError((_) {
@@ -574,6 +665,7 @@ class AppState extends State<CmdBridgeApp> {
               const Spacer(),
               Text('Last used: ${_proxy.currentModel}',
                   style: TextStyle(color: Colors.grey)),
+              Text(' | ${_refreshLabel()}', style: TextStyle(color: Colors.grey)),
             ],
           ),
         ],
@@ -625,7 +717,7 @@ class AppState extends State<CmdBridgeApp> {
   }
 
   Component _buildContent() {
-    if (_loadingData) {
+    if (_loadingData && _foregroundRefresh) {
       return Center(
         child: Text('Loading...', style: TextStyle(color: Colors.cyan)),
       );
@@ -1059,6 +1151,7 @@ class AppState extends State<CmdBridgeApp> {
 
   Component _logPanel({required bool fullscreen}) {
     final entries = LogStore.latestFirst.take(200).toList();
+    _lastLogVersion = LogStore.version;
     final listChildren = <Component>[];
     String? lastDate;
     final dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -1221,6 +1314,7 @@ class AppState extends State<CmdBridgeApp> {
 
   void _startLogin() {
     _panel = _Panel.login;
+    _pageRefreshTimer?.cancel();
     _setStatus('Opening auth URL...');
     setState(() {});
     // In a real implementation, this would start the OAuth callback server

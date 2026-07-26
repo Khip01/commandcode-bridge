@@ -35,6 +35,7 @@ class ProxyServer {
   }
 
   void stop() {
+    if (!_running) return;
     _running = false;
     _server?.close(force: true);
     _server = null;
@@ -44,8 +45,6 @@ class ProxyServer {
   void _handleRequest(HttpRequest request) {
     final path = request.uri.path;
     final method = request.method;
-
-    LogStore.debug('${method.toUpperCase()} $path');
 
     try {
       if (path == '/v1/chat/completions' && method == 'POST') {
@@ -80,21 +79,41 @@ class ProxyServer {
       final bytes = await request.toList();
       final body = utf8.decode(bytes.expand((b) => b).toList());
       final openaiReq = jsonDecode(body) as Map<String, dynamic>;
+      final normalized = _normalizeRequest(openaiReq);
 
       final model = openaiReq['model'] as String? ?? 'deepseek/deepseek-v4-flash';
-      final messages = openaiReq['messages'] as List<dynamic>? ?? [];
       final stream = openaiReq['stream'] as bool? ?? false;
-      final maxTokens = openaiReq['max_tokens'] as int? ?? 64000;
+      final maxTokens = (openaiReq['max_tokens'] as num? ??
+              openaiReq['max_completion_tokens'] as num?)
+          ?.toInt() ??
+          64000;
       final temperature = openaiReq['temperature'] as num?;
-      final system = openaiReq['system'] as String?;
+      final tools = _toWireTools(openaiReq['tools']);
 
       _currentModel = model;
-      LogStore.info('Chat: model=$model stream=$stream');
 
       if (stream) {
-        await _proxyStreaming(request.response, acc, model, messages, maxTokens, temperature, system);
+        await _proxyStreaming(
+          request.response,
+          acc,
+          model,
+          normalized.messages,
+          tools,
+          maxTokens,
+          temperature,
+          normalized.system,
+        );
       } else {
-        await _proxyNonStreaming(request.response, acc, model, messages, maxTokens, temperature, system);
+        await _proxyNonStreaming(
+          request.response,
+          acc,
+          model,
+          normalized.messages,
+          tools,
+          maxTokens,
+          temperature,
+          normalized.system,
+        );
       }
     } catch (e) {
       LogStore.error('Chat completion error: $e');
@@ -106,17 +125,19 @@ class ProxyServer {
     HttpResponse response,
     AppAccount acc,
     String model,
-    List<dynamic> messages,
+    List<Map<String, dynamic>> wireMessages,
+    List<Map<String, dynamic>> wireTools,
     int maxTokens,
     num? temperature,
     String? system,
   ) async {
-    final wireMessages = _toWireMessages(messages);
+    final stopwatch = Stopwatch()..start();
 
     final body = {
       'params': {
         'model': model,
         'messages': wireMessages,
+        if (wireTools.isNotEmpty) 'tools': wireTools,
         'stream': true,
         'max_tokens': maxTokens,
         if (temperature != null) 'temperature': temperature.toDouble(),
@@ -146,17 +167,17 @@ class ProxyServer {
       );
 
       upstreamReq.headers.set('Authorization', 'Bearer ${acc.apiKey}');
-      upstreamReq.headers.set('Content-Type', 'application/json');
+      upstreamReq.headers.contentType = ContentType.json;
       upstreamReq.headers.set('User-Agent', 'cli');
       upstreamReq.headers.set('x-command-code-version', configStore.config.cliVersion);
       upstreamReq.headers.set('x-cli-environment', 'production');
 
-      upstreamReq.write(jsonEncode(body));
+      upstreamReq.add(utf8.encode(jsonEncode(body)));
 
       final upstreamRes = await upstreamReq.close();
 
       response.statusCode = upstreamRes.statusCode;
-      response.headers.set('Content-Type', 'text/event-stream');
+      response.headers.contentType = ContentType('text', 'event-stream', charset: 'utf-8');
       response.headers.set('Cache-Control', 'no-cache');
       response.headers.set('Connection', 'keep-alive');
 
@@ -165,6 +186,8 @@ class ProxyServer {
         int inputTokens = 0;
         int outputTokens = 0;
         String leftover = '';
+        bool sentAssistantRole = false;
+        final toolCalls = <Map<String, dynamic>>[];
 
         await for (final raw in upstreamRes) {
           final chunk = utf8.decode(raw);
@@ -184,11 +207,15 @@ class ProxyServer {
                     'object': 'chat.completion.chunk',
                     'choices': [
                       {
-                        'delta': {'content': event['text'] ?? ''},
+                        'delta': {
+                          if (!sentAssistantRole) 'role': 'assistant',
+                          'content': event['text'] ?? '',
+                        },
                         'index': 0,
                       }
                     ],
                   });
+                  sentAssistantRole = true;
                   break;
 
                 case 'reasoning-delta':
@@ -197,11 +224,38 @@ class ProxyServer {
                     'object': 'chat.completion.chunk',
                     'choices': [
                       {
-                        'delta': {'reasoning_content': event['text'] ?? ''},
+                        'delta': {
+                          if (!sentAssistantRole) 'role': 'assistant',
+                          'reasoning_content': event['text'] ?? '',
+                        },
                         'index': 0,
                       }
                     ],
                   });
+                  sentAssistantRole = true;
+                  break;
+
+                case 'tool-call':
+                  final toolCall = _toOpenAiToolCall(
+                    event,
+                    index: toolCalls.length,
+                    includeIndex: true,
+                  );
+                  toolCalls.add(toolCall);
+                  _sendSSE(response, {
+                    'id': event['id'],
+                    'object': 'chat.completion.chunk',
+                    'choices': [
+                      {
+                        'delta': {
+                          if (!sentAssistantRole) 'role': 'assistant',
+                          'tool_calls': [toolCall],
+                        },
+                        'index': 0,
+                      }
+                    ],
+                  });
+                  sentAssistantRole = true;
                   break;
 
                 case 'finish':
@@ -219,7 +273,7 @@ class ProxyServer {
                   _sendSSE(response, {
                     'error': {'message': msg, 'type': 'api_error'},
                   });
-                  LogStore.error('API error: $msg');
+                  LogStore.error('Chat upstream error ($model): $msg');
                   break;
               }
             } catch (_) {}
@@ -244,14 +298,20 @@ class ProxyServer {
         });
 
         response.write('data: [DONE]\n\n');
-        LogStore.success('Stream completed for model=$model');
+        LogStore.success(
+          'Chat ok ($model, ${stopwatch.elapsed.inMilliseconds}ms, in=$inputTokens, out=$outputTokens${toolCalls.isNotEmpty ? ', tool_calls=${toolCalls.length}' : ''})',
+        );
       } else {
         final errBytes = await upstreamRes.toList();
         final errBody = utf8.decode(errBytes.expand((b) => b).toList());
-        response.write('data: ${jsonEncode({'error': errBody})}\n\n');
+        final msg = _extractUpstreamErrorMessage(errBody);
+        _sendSSE(response, {
+          'error': {'message': msg, 'type': 'upstream_error'},
+        });
+        LogStore.error('Chat rejected ($model): $msg');
       }
     } catch (e) {
-      LogStore.error('Streaming proxy error: $e');
+      LogStore.error('Streaming proxy error ($model): $e');
       _sendSSE(response, {
         'error': {'message': 'Proxy error: $e', 'type': 'proxy_error'},
       });
@@ -266,17 +326,19 @@ class ProxyServer {
     HttpResponse response,
     AppAccount acc,
     String model,
-    List<dynamic> messages,
+    List<Map<String, dynamic>> wireMessages,
+    List<Map<String, dynamic>> wireTools,
     int maxTokens,
     num? temperature,
     String? system,
   ) async {
-    final wireMessages = _toWireMessages(messages);
+    final stopwatch = Stopwatch()..start();
 
     final body = {
       'params': {
         'model': model,
         'messages': wireMessages,
+        if (wireTools.isNotEmpty) 'tools': wireTools,
         'stream': true,
         'max_tokens': maxTokens,
         if (temperature != null) 'temperature': temperature.toDouble(),
@@ -306,21 +368,23 @@ class ProxyServer {
       );
 
       upstreamReq.headers.set('Authorization', 'Bearer ${acc.apiKey}');
-      upstreamReq.headers.set('Content-Type', 'application/json');
+      upstreamReq.headers.contentType = ContentType.json;
       upstreamReq.headers.set('User-Agent', 'cli');
       upstreamReq.headers.set('x-command-code-version', configStore.config.cliVersion);
       upstreamReq.headers.set('x-cli-environment', 'production');
 
-      upstreamReq.write(jsonEncode(body));
+      upstreamReq.add(utf8.encode(jsonEncode(body)));
 
       final upstreamRes = await upstreamReq.close();
 
       if (upstreamRes.statusCode != 200) {
         final errBytes = await upstreamRes.toList();
         final errBody = utf8.decode(errBytes.expand((b) => b).toList());
+        final msg = _extractUpstreamErrorMessage(errBody);
         _sendJson(response, upstreamRes.statusCode, {
-          'error': {'message': errBody, 'type': 'upstream_error'},
+          'error': {'message': msg, 'type': 'upstream_error'},
         });
+        LogStore.error('Chat rejected ($model): $msg');
         return;
       }
 
@@ -329,6 +393,7 @@ class ProxyServer {
       String finishReason = 'stop';
       int inputTokens = 0;
       int outputTokens = 0;
+      final toolCalls = <Map<String, dynamic>>[];
 
       await for (final raw in upstreamRes) {
         final chunk = utf8.decode(raw);
@@ -342,6 +407,9 @@ class ProxyServer {
                 break;
               case 'reasoning-delta':
                 reasoning = (reasoning ?? '') + (event['text'] as String? ?? '');
+                break;
+              case 'tool-call':
+                toolCalls.add(_toOpenAiToolCall(event));
                 break;
               case 'finish':
                 finishReason = event['finishReason'] as String? ?? 'stop';
@@ -361,6 +429,7 @@ class ProxyServer {
         'message': {
           'role': 'assistant',
           'content': content,
+          if (toolCalls.isNotEmpty) 'tool_calls': toolCalls,
         },
         'finish_reason': _mapFinishReason(finishReason),
       };
@@ -381,45 +450,272 @@ class ProxyServer {
         },
       });
 
-      LogStore.success('Non-streaming completed: tokens_in=$inputTokens tokens_out=$outputTokens');
+      LogStore.success(
+        'Chat ok ($model, ${stopwatch.elapsed.inMilliseconds}ms, in=$inputTokens, out=$outputTokens${toolCalls.isNotEmpty ? ', tool_calls=${toolCalls.length}' : ''})',
+      );
     } catch (e) {
-      LogStore.error('Non-streaming proxy error: $e');
+      LogStore.error('Non-streaming proxy error ($model): $e');
       _sendJson(response, 500, {'error': 'Proxy error: $e'});
     } finally {
       client.close();
     }
   }
 
-  List<Map<String, dynamic>> _toWireMessages(List<dynamic> messages) {
-    final result = <Map<String, dynamic>>[];
-    for (final msg in messages) {
-      final role = msg['role'] as String? ?? 'user';
-      final content = msg['content'];
-      final wireContent = <Map<String, dynamic>>[];
+  _NormalizedRequest _normalizeRequest(Map<String, dynamic> request) {
+    final messages = request['messages'] as List<dynamic>? ?? const [];
+    final normalized = <Map<String, dynamic>>[];
+    final systemParts = <String>[];
 
-      if (content is String) {
+    for (final raw in messages) {
+      if (raw is! Map) continue;
+      final role = raw['role'] as String? ?? 'user';
+
+      if (role == 'system') {
+        final text = _extractTextContent(raw['content']);
+        if (text.isNotEmpty) systemParts.add(text);
+        continue;
+      }
+
+      if (role == 'tool') {
+        final toolResult = _toWireToolMessage(raw);
+        if (toolResult != null) normalized.add(toolResult);
+        continue;
+      }
+
+      final message = _toWireMessage(raw);
+      if (message != null) normalized.add(message);
+    }
+
+    final directSystem = request['system'];
+    if (directSystem is String && directSystem.trim().isNotEmpty) {
+      systemParts.add(directSystem.trim());
+    }
+
+    return _NormalizedRequest(
+      messages: normalized,
+      system: systemParts.isEmpty ? null : systemParts.join('\n\n'),
+    );
+  }
+
+  Map<String, dynamic>? _toWireMessage(Map raw) {
+    final role = raw['role'] as String? ?? 'user';
+    final wireRole = role == 'assistant' ? 'assistant' : 'user';
+    final content = _toWireContent(
+      raw['content'],
+      allowToolCalls: role == 'assistant',
+      toolCalls: role == 'assistant' ? raw['tool_calls'] ?? raw['toolCalls'] : null,
+      functionCall: role == 'assistant' ? raw['function_call'] ?? raw['functionCall'] : null,
+    );
+    if (content.isEmpty && role != 'assistant') return null;
+    if (content.isEmpty && role == 'assistant') return {'role': wireRole, 'content': const <Map<String, dynamic>>[]};
+    return {'role': wireRole, 'content': content};
+  }
+
+  Map<String, dynamic>? _toWireToolMessage(Map raw) {
+    final toolCallId = raw['tool_call_id'] as String? ?? raw['toolCallId'] as String?;
+    if (toolCallId == null || toolCallId.isEmpty) return null;
+
+    final outputText = _extractTextContent(raw['content']);
+    return {
+      'role': 'tool',
+      'content': [
+        {
+          'type': 'tool-result',
+          'toolCallId': toolCallId,
+          'toolName': raw['name'] as String? ?? '',
+          'output': {
+            'type': 'text',
+            'value': outputText,
+          },
+        }
+      ],
+    };
+  }
+
+  List<Map<String, dynamic>> _toWireTools(dynamic tools) {
+    if (tools is! List) return const [];
+
+    final result = <Map<String, dynamic>>[];
+    for (final raw in tools) {
+      if (raw is! Map) continue;
+      if ((raw['type'] as String?) != 'function') continue;
+
+      final function = raw['function'] as Map<String, dynamic>? ?? const {};
+      final name = function['name'] as String?;
+      if (name == null || name.isEmpty) continue;
+
+      result.add({
+        'name': name,
+        'description': function['description'] as String? ?? '',
+        'input_schema': _toJsonSchema(function['parameters']),
+      });
+    }
+
+    return result;
+  }
+
+  Map<String, dynamic> _toJsonSchema(dynamic schema) {
+    if (schema is Map<String, dynamic>) return schema;
+    if (schema is Map) return Map<String, dynamic>.from(schema);
+    return {
+      'type': 'object',
+      'properties': <String, dynamic>{},
+      'required': <String>[],
+      'additionalProperties': true,
+    };
+  }
+
+  List<Map<String, dynamic>> _toWireContent(
+    dynamic content, {
+    required bool allowToolCalls,
+    dynamic toolCalls,
+    dynamic functionCall,
+  }) {
+    final wireContent = <Map<String, dynamic>>[];
+
+    if (content is String) {
+      if (content.isNotEmpty) {
         wireContent.add({'type': 'text', 'text': content});
-      } else if (content is List) {
-        for (final part in content) {
-          if (part is Map) {
-            final type = part['type'] as String? ?? 'text';
-            if (type == 'text') {
-              wireContent.add({'type': 'text', 'text': part['text'] ?? ''});
-            } else if (type == 'image_url') {
-              final url = part['image_url'] as Map<String, dynamic>? ?? {};
-              wireContent.add({
-                'type': 'image',
-                'image': url['url'] ?? '',
-                'mimeType': 'image/png',
-              });
+      }
+    } else if (content is List) {
+      for (final part in content) {
+        if (part is! Map) continue;
+        final type = part['type'] as String? ?? 'text';
+
+        switch (type) {
+          case 'text':
+            wireContent.add({'type': 'text', 'text': part['text'] ?? ''});
+            break;
+          case 'input_text':
+            wireContent.add({'type': 'text', 'text': part['text'] ?? ''});
+            break;
+          case 'image_url':
+            final url = part['image_url'] as Map<String, dynamic>? ?? {};
+            wireContent.add({
+              'type': 'image',
+              'image': url['url'] ?? '',
+              'mimeType': url['mime_type'] ?? 'image/png',
+            });
+            break;
+          case 'input_image':
+            wireContent.add({
+              'type': 'image',
+              'image': part['image_url'] ?? '',
+              'mimeType': part['mime_type'] ?? 'image/png',
+            });
+            break;
+          case 'reasoning':
+          case 'reasoning_content':
+            if (allowToolCalls) {
+              wireContent.add({'type': 'reasoning', 'text': part['text'] ?? ''});
             }
-          }
+            break;
+        }
+      }
+    }
+
+    if (allowToolCalls) {
+      if (content is List) {
+        final embeddedToolCalls = content.whereType<Map>().where((part) {
+          final type = part['type'] as String?;
+          return type == 'tool_call' || type == 'function';
+        });
+
+        for (final toolCall in embeddedToolCalls) {
+          wireContent.add(_toWireToolCall(toolCall));
         }
       }
 
-      result.add({'role': role, 'content': wireContent});
+      if (toolCalls is List) {
+        for (final toolCall in toolCalls.whereType<Map>()) {
+          wireContent.add(_toWireToolCall(toolCall));
+        }
+      }
+
+      if (functionCall is Map) {
+        wireContent.add(_toWireToolCall(functionCall));
+      }
     }
-    return result;
+
+    return wireContent;
+  }
+
+  Map<String, dynamic> _toWireToolCall(Map toolCall) {
+    final rawId = toolCall['id'] ?? toolCall['tool_call_id'] ?? toolCall['toolCallId'];
+    final function = toolCall['function'] as Map<String, dynamic>? ?? const {};
+    final name = toolCall['name'] as String? ?? function['name'] as String? ?? '';
+    final arguments = toolCall['arguments'] ?? function['arguments'];
+
+    return {
+      'type': 'tool-call',
+      'toolCallId': rawId?.toString() ?? '',
+      'toolName': name,
+      'input': _decodeToolArguments(arguments),
+    };
+  }
+
+  Map<String, dynamic> _decodeToolArguments(dynamic arguments) {
+    if (arguments is Map<String, dynamic>) return arguments;
+    if (arguments is Map) return Map<String, dynamic>.from(arguments);
+    if (arguments is String && arguments.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(arguments);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  String _extractTextContent(dynamic content) {
+    if (content is String) return content;
+    if (content is! List) return '';
+
+    final parts = <String>[];
+    for (final part in content) {
+      if (part is! Map) continue;
+      final type = part['type'] as String? ?? 'text';
+      if (type == 'text' || type == 'input_text' || type == 'reasoning' || type == 'reasoning_content') {
+        final text = part['text'] as String?;
+        if (text != null && text.isNotEmpty) parts.add(text);
+      }
+    }
+    return parts.join('\n');
+  }
+
+  Map<String, dynamic> _toOpenAiToolCall(
+    Map<String, dynamic> event, {
+    int? index,
+    bool includeIndex = false,
+  }) {
+    final input = event['input'];
+    final arguments = input == null
+        ? '{}'
+        : input is String
+            ? input
+            : input is Map || input is List
+                ? jsonEncode(input)
+                : '{}';
+    return {
+      if (includeIndex && index != null) 'index': index,
+      'id': event['toolCallId'] ?? event['id'] ?? '',
+      'type': 'function',
+      'function': {
+        'name': event['toolName'] ?? '',
+        'arguments': arguments,
+      },
+    };
+  }
+
+  String _extractUpstreamErrorMessage(String body) {
+    try {
+      final decoded = jsonDecode(body) as Map<String, dynamic>;
+      final error = decoded['error'];
+      if (error is Map<String, dynamic>) {
+        return error['message'] as String? ?? body;
+      }
+    } catch (_) {}
+    return body;
   }
 
   String _mapFinishReason(String reason) {
@@ -446,7 +742,7 @@ class ProxyServer {
 
   void _sendJson(HttpResponse response, int status, Map<String, dynamic> data) {
     response.statusCode = status;
-    response.headers.set('Content-Type', 'application/json');
+    response.headers.contentType = ContentType.json;
     response.write(jsonEncode(data));
     response.close();
   }
@@ -498,4 +794,11 @@ class ProxyServer {
       'protocol': 'OpenAI Compatible',
     });
   }
+}
+
+class _NormalizedRequest {
+  final List<Map<String, dynamic>> messages;
+  final String? system;
+
+  _NormalizedRequest({required this.messages, required this.system});
 }
