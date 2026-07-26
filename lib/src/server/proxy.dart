@@ -189,8 +189,7 @@ class ProxyServer {
         bool sentAssistantRole = false;
         final toolCalls = <Map<String, dynamic>>[];
 
-        await for (final raw in upstreamRes) {
-          final chunk = utf8.decode(raw);
+        await for (final chunk in utf8.decoder.bind(upstreamRes)) {
           final parts = (leftover + chunk).split('\n');
           leftover = parts.removeLast();
 
@@ -278,6 +277,10 @@ class ProxyServer {
               }
             } catch (_) {}
           }
+        }
+
+        if (toolCalls.isNotEmpty && finishReason == 'stop') {
+          finishReason = 'tool_calls';
         }
 
         _sendSSE(response, {
@@ -394,10 +397,14 @@ class ProxyServer {
       int inputTokens = 0;
       int outputTokens = 0;
       final toolCalls = <Map<String, dynamic>>[];
+      String leftover = '';
 
       await for (final raw in upstreamRes) {
         final chunk = utf8.decode(raw);
-        for (final line in chunk.split('\n')) {
+        final parts = (leftover + chunk).split('\n');
+        leftover = parts.removeLast();
+
+        for (final line in parts) {
           if (line.trim().isEmpty) continue;
           try {
             final event = jsonDecode(line) as Map<String, dynamic>;
@@ -422,6 +429,10 @@ class ProxyServer {
             }
           } catch (_) {}
         }
+      }
+
+      if (toolCalls.isNotEmpty && finishReason == 'stop') {
+        finishReason = 'tool_calls';
       }
 
       final choice = <String, dynamic>{
