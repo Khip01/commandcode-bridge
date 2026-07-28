@@ -17,7 +17,8 @@
 |-----|---------|--------|
 | `1-6` | Always | Switch info page |
 | `r` | Always | Refresh all API data |
-| `c` | Always | Copy endpoint URL to clipboard |
+| `o` | Always | Copy OpenAI endpoint URL to clipboard |
+| `a` | Always | Copy Anthropic URL to clipboard |
 | `p` | Always | Configure proxy port (with availability scan) |
 | `h` | Always | Open help |
 | `q` | Always | Quit (with confirmation) |

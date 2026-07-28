@@ -203,7 +203,8 @@ class AppState extends State<CmdBridgeApp> {
 
     if (_panel == _Panel.quit) {
       if (e.logicalKey == LogicalKey.keyY ||
-          e.logicalKey == LogicalKey.enter) {
+          e.logicalKey == LogicalKey.enter ||
+          (e.logicalKey == LogicalKey.keyC && e.isControlPressed)) {
         _doQuit();
         return true;
       }
@@ -247,6 +248,13 @@ class AppState extends State<CmdBridgeApp> {
     }
 
     if (_panel == _Panel.main) {
+      if (e.logicalKey == LogicalKey.keyC && e.isControlPressed) {
+        _panel = _Panel.quit;
+        _setStatus('Press q or Ctrl+C to quit', duration: 10);
+        setState(() {});
+        return true;
+      }
+
       if (e.logicalKey == LogicalKey.keyL && e.isControlPressed) {
         _showLog = !_showLog;
         if (_showLog) _logFullscreen = false;
@@ -320,8 +328,12 @@ class AppState extends State<CmdBridgeApp> {
           _refreshData(foreground: true);
           return true;
 
-        case LogicalKey.keyC:
+        case LogicalKey.keyO:
           _copyEndpointUrl();
+          return true;
+
+        case LogicalKey.keyA:
+          _copyAnthropicUrl();
           return true;
 
         case LogicalKey.keyP:
@@ -463,12 +475,27 @@ class AppState extends State<CmdBridgeApp> {
   }
 
   void _copyEndpointUrl() {
-    final url = 'http://127.0.0.1:${_config.config.serverPort}/v1';
-    _setStatus('Copying endpoint URL...');
+    final port = _config.config.serverPort;
+    final url = 'http://127.0.0.1:$port/v1';
+    _setStatus('Copying OpenAI endpoint...');
     _copyNative(url).then((ok) {
       if (ok) {
-        _setStatus('Copied endpoint: $url', duration: 4);
-        LogStore.info('Copied endpoint URL');
+        _setStatus('Copied OpenAI: $url', duration: 4);
+        LogStore.info('Copied OpenAI endpoint URL');
+      } else {
+        _setStatus('Clipboard copy failed', duration: 4);
+      }
+    });
+  }
+
+  void _copyAnthropicUrl() {
+    final port = _config.config.serverPort;
+    final url = 'http://127.0.0.1:$port';
+    _setStatus('Copying Anthropic endpoint...');
+    _copyNative(url).then((ok) {
+      if (ok) {
+        _setStatus('Copied Anthropic: $url', duration: 4);
+        LogStore.info('Copied Anthropic endpoint URL');
       } else {
         _setStatus('Clipboard copy failed', duration: 4);
       }
@@ -631,6 +658,7 @@ class AppState extends State<CmdBridgeApp> {
     final email = whoami?.email ?? '';
     final planName = sub != null ? _planDisplayName(sub.planId) : '';
     final isRunning = _proxy.isRunning;
+    final port = _config.config.serverPort;
 
     return Container(
       padding: const EdgeInsets.all(1),
@@ -644,7 +672,7 @@ class AppState extends State<CmdBridgeApp> {
             children: [
               Text('CommandCode Bridge',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text('  OpenAI Compatible',
+              Text('  OpenAI + Anthropic',
                   style: TextStyle(color: Colors.green)),
               Text(' | ', style: TextStyle(color: Colors.grey)),
               Text(displayName, style: const TextStyle(color: Colors.cyan)),
@@ -665,10 +693,20 @@ class AppState extends State<CmdBridgeApp> {
           ),
           Row(
             children: [
-              Text('\u25b8 http://127.0.0.1:${_config.config.serverPort}/v1',
+              Text('\u25b8 OpenAI:  ',
+                  style: TextStyle(color: Colors.grey)),
+              Text('http://127.0.0.1:$port/v1',
                   style: const TextStyle(color: Colors.green)),
-              Text('  [c]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-              Text('opy endpoint url', style: TextStyle(color: Colors.grey)),
+              Text(' [o] copy', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          Row(
+            children: [
+              Text('\u25b8 Anthropic: ',
+                  style: TextStyle(color: Colors.grey)),
+              Text('http://127.0.0.1:$port',
+                  style: const TextStyle(color: Colors.cyan)),
+              Text(' [a] copy', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
               const Spacer(),
               Text('Last used: ${_proxy.currentModel}',
                   style: TextStyle(color: Colors.grey)),
@@ -1078,11 +1116,18 @@ class AppState extends State<CmdBridgeApp> {
         add('');
         add('Endpoints', Colors.cyan);
         add('');
-        add('POST /v1/chat/completions   OpenAI-compatible chat');
-        add('GET  /v1/models             List available models');
-        add('GET  /v1/health             Health check');
-        add('GET  /v1/token              Get access token');
-        add('GET  /v1/info               Bridge info');
+        add('OpenAI:');
+        add('  http://127.0.0.1:${_config.config.serverPort}/v1');
+        add('  POST /v1/chat/completions   Chat completions');
+        add('  GET  /v1/models             List models');
+        add('  GET  /v1/health             Health check');
+        add('  GET  /v1/token              Access token');
+        add('  GET  /v1/info               Bridge info');
+        add('');
+        add('Anthropic:');
+        add('  http://127.0.0.1:${_config.config.serverPort}');
+        add('  POST /v1/messages           Messages API');
+        add('  POST /messages              Messages API (alt)');
         add('');
         add('API Key: any value works (bridge uses your saved auth)');
         break;
@@ -1265,11 +1310,17 @@ class AppState extends State<CmdBridgeApp> {
     add('');
     add('Other:', Colors.cyan);
     add('');
-    add('  [c]       Copy endpoint URL (http://.../v1) to clipboard');
+    add('  [o]       Copy OpenAI endpoint URL (http://.../v1) to clipboard');
+    add('  [a]       Copy Anthropic endpoint URL (http://... base) to clipboard');
     add('  [p]       Configure proxy port');
     add('  [l]       Login panel (if not authenticated)');
     add('  [h]       Show this help');
     add('  [q]       Quit');
+    add('');
+    add('Endpoints:', Colors.cyan);
+    add('');
+    add('  OpenAI:   http://127.0.0.1:${_config.config.serverPort}/v1');
+    add('  Anthropic: http://127.0.0.1:${_config.config.serverPort}');
     add('');
     add('Links:', Colors.cyan);
     add('');
@@ -1514,8 +1565,10 @@ class AppState extends State<CmdBridgeApp> {
             children: [
               Text('Actions:', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
               if (_account.isLoaded) ...[
-                Text(' [c]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                Text('opy endpoint url ', style: TextStyle(color: Colors.grey)),
+                Text(' [o]', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                Text('penai url ', style: TextStyle(color: Colors.grey)),
+                Text('[a]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+                Text('nthropic url ', style: TextStyle(color: Colors.grey)),
                 Text('[r]', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
                 Text('efresh ', style: TextStyle(color: Colors.grey)),
                 Text('[p]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),

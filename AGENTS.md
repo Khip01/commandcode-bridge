@@ -178,7 +178,7 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
   },
   "models": {
     "deepseek/deepseek-v4-pro": {
-      "name": "DeepSeek V4 Pro",
+      "name": "Command Code - DeepSeek V4 Pro /Op",
       "tool_call": true,
       "reasoning": true,
       "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
@@ -199,7 +199,7 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
   },
   "models": {
     "deepseek/deepseek-v4-pro": {
-      "name": "DeepSeek V4 Pro",
+      "name": "Command Code - DeepSeek V4 Pro /Op",
       "tool_call": true,
       "reasoning": true,
       "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
@@ -271,7 +271,8 @@ Visualization uses `ProgressBar` from nocterm with color-coded fill:
 |-----|---------|--------|
 | `1-6` | Always | Switch info page |
 | `r` | Always | Refresh all API data |
-| `c` | Always | Copy endpoint URL to clipboard |
+| `o` | Always | Copy OpenAI endpoint URL to clipboard |
+| `a` | Always | Copy Anthropic endpoint URL to clipboard |
 | `p` | Always | Open port configuration panel |
 | `h` | Always | Open help panel |
 | `q` | Always | Open quit confirmation |

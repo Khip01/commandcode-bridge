@@ -4,6 +4,8 @@ All endpoints at `http://127.0.0.1:17077`.
 
 ## OpenAI Compatible
 
+Base URL: `http://127.0.0.1:17077/v1`
+
 | Path | Method | Description |
 |------|--------|-------------|
 | `/v1/chat/completions` | POST | Chat completions (stream + non-stream) |
@@ -13,6 +15,8 @@ All endpoints at `http://127.0.0.1:17077`.
 | `/v1/info` | GET | Bridge info and config |
 
 ## Anthropic Compatible
+
+Base URL: `http://127.0.0.1:17077`
 
 | Path | Method | Description |
 |------|--------|-------------|
@@ -36,7 +40,7 @@ Any value works. The bridge uses your saved Command Code auth from `~/.commandco
   },
   "models": {
     "deepseek/deepseek-v4-pro": {
-      "name": "DeepSeek V4 Pro",
+      "name": "Command Code - DeepSeek V4 Pro /Op",
       "tool_call": true,
       "reasoning": true,
       "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
@@ -57,7 +61,7 @@ Any value works. The bridge uses your saved Command Code auth from `~/.commandco
   },
   "models": {
     "deepseek/deepseek-v4-pro": {
-      "name": "DeepSeek V4 Pro",
+      "name": "Command Code - DeepSeek V4 Pro /An",
       "tool_call": true,
       "reasoning": true,
       "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
@@ -69,8 +73,9 @@ Any value works. The bridge uses your saved Command Code auth from `~/.commandco
 ### Zed (Anthropic Compatible)
 
 Zed reads providers from `settings.json` under `language_models.anthropic_compatible`.
-The API key must be entered through **Agent Settings** (`agent: open settings` -> LLM Providers),
-not in `settings.json`.
+The API key must be entered through **Agent Settings** (`agent: open settings` -> LLM Providers).
+
+`api_url` must be the base URL **without** `/v1` — Zed auto-appends `/v1/messages`.
 
 ```jsonc
 "Anthropic Command Code (Go Plan) - Khip01 Local": {
@@ -78,7 +83,7 @@ not in `settings.json`.
   "available_models": [
     {
       "name": "deepseek/deepseek-v4-pro",
-      "display_name": "DeepSeek V4 Pro (CC)",
+      "display_name": "DeepSeek V4 Pro - CommandCode",
       "max_tokens": 1000000,
       "max_output_tokens": 64000,
       "extra_beta_headers": [],
