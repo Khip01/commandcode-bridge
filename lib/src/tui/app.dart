@@ -5,12 +5,12 @@ import '../models/account.dart';
 import '../models/models_db.dart';
 import '../services/api_client.dart';
 import '../services/log_store.dart';
-import '../server/proxy.dart';
+import '../server/server_controller.dart';
 
 class CmdBridgeApp extends StatefulComponent {
   final AccountStore accountStore;
   final ConfigStore configStore;
-  final ProxyServer proxyServer;
+  final ServerController proxyServer;
 
   CmdBridgeApp({
     required this.accountStore,

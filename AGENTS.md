@@ -1,10 +1,13 @@
 # CommandCode Bridge
 
-Single-account proxy bridge for Command Code CLI (`cmd` from `commandcode.ai`). TUI dashboard with progress bars + OpenAI-compatible HTTP proxy.
+Single-account proxy bridge for Command Code CLI (`cmd` from `commandcode.ai`).
+TUI dashboard with progress bars + OpenAI-compatible and Anthropic-compatible HTTP proxy.
 
 ## Auth
 
-Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the API key from this file. Run `cmd login` to authenticate first. You can also press `[l]` in the bridge TUI for login instructions.
+Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the
+API key from this file. Run `cmd login` to authenticate first. You can also
+press `[l]` in the bridge TUI for login instructions.
 
 ## Architecture
 
@@ -12,7 +15,7 @@ Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the 
 - Language: Dart 3.10+
 - TUI: `nocterm` v0.8.0 (ProgressBar for visualizations)
 - Server: `dart:io` `HttpServer`
-- HTTP client: `package:http`
+- HTTP client: `dart:io` `HttpClient`
 - Compile: `dart compile exe` -> single binary
 - Distribution: npm tarball with Node.js launcher wrapper
 
@@ -20,31 +23,38 @@ Command Code auth is stored at `~/.commandcode/auth.json`. The bridge reads the 
 ```
 commandcode-bridge/
 ├── bin/
-│   ├── commandcode_bridge.dart      # Entry point
-│   └── commandcode-bridge.js        # npm wrapper: OS detection + binary spawn
+│   ├── commandcode_bridge.dart       # Entry point
+│   └── commandcode-bridge.js         # npm wrapper: OS detection + binary spawn
 ├── lib/
-│   ├── commandcode_bridge.dart      # Barrel
+│   ├── commandcode_bridge.dart       # Barrel
 │   └── src/
-│       ├── main.dart                # CLI wiring (run, run --server, help)
+│       ├── main.dart                 # CLI wiring (run, run --server, help)
 │       ├── models/
-│       │   ├── account.dart         # Account + config store (port persist)
-│       │   └── models_db.dart       # 44 models with goAccessible field
+│       │   ├── account.dart          # Account + config store (port persist)
+│       │   └── models_db.dart        # 44 models with goAccessible field
 │       ├── services/
-│       │   ├── api_client.dart      # HTTP client for api.commandcode.ai
-│       │   └── log_store.dart       # JSONL activity log (2000 entries)
+│       │   ├── api_client.dart       # HTTP client for api.commandcode.ai
+│       │   └── log_store.dart        # JSONL activity log (2000 entries)
 │       ├── server/
-│       │   └── proxy.dart           # OpenAI-compatible proxy
+│       │   ├── server_controller.dart # HTTP server + routing
+│       │   ├── openai_handler.dart    # OpenAI-compatible proxy
+│       │   └── anthropic_handler.dart # Anthropic-compatible proxy
 │       └── tui/
-│           └── app.dart             # Nocterm TUI (9 panels + log + bars)
+│       └── app.dart              # Nocterm TUI (9 panels + log + bars)
+├── docs/
+│   ├── INSTALL.md                  # Install options, platform support
+│   ├── API-REFERENCE.md           # Proxy endpoints, client configs
+│   ├── TUI.md                     # TUI pages, key bindings, plan access
+│   └── ARCHITECTURE.md            # File structure, proxy flow, protocol translation
 ├── scripts/
-│   └── stage-npm-package.mjs       # CI packaging helper: assembles release tarball
+│   └── stage-npm-package.mjs        # CI packaging helper: assembles release tarball
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
-│   │   └── bug-report.md           # Bug report template
+│   │   └── bug-report.md            # Bug report template
 │   └── workflows/
-│       ├── test.yml                 # Dart analyze + test + smoke
-│       ├── release.yml              # Matrix build + tarball + GitHub release
-│       └── post-release.yml         # Install simulation from real asset
+│       ├── test.yml                  # Dart analyze + test + smoke
+│       ├── release.yml               # Matrix build + tarball + GitHub release
+│       └── post-release.yml          # Install simulation from real asset
 ├── test/
 ├── AGENTS.md
 ├── CHANGELOG.md
@@ -147,7 +157,9 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
 
 | Path | Method | Description |
 |------|--------|-------------|
-| `/v1/chat/completions` | POST | OpenAI-compatible chat (stream + non-stream) |
+| `/v1/chat/completions` | POST | OpenAI-compatible chat completions |
+| `/v1/messages` | POST | Anthropic-compatible Messages API |
+| `/messages` | POST | Anthropic-compatible Messages API (alt path) |
 | `/v1/models` | GET | List 44 available models |
 | `/v1/health` | GET | Health check |
 | `/v1/token` | GET | Get access token |
@@ -155,23 +167,42 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
 
 ## OpenCode Configuration
 
+### OpenAI Compatible
+
 ```jsonc
-"CommandCode": {
+"Khip01 - Command Code": {
   "name": "Command Code",
   "options": {
     "baseURL": "http://127.0.0.1:17077/v1",
     "apiKey": "anything"
   },
   "models": {
-    "deepseek/deepseek-v4-flash": {
-      "name": "DeepSeek V4 Flash",
+    "deepseek/deepseek-v4-pro": {
+      "name": "DeepSeek V4 Pro",
       "tool_call": true,
       "reasoning": true,
-      "limit": {
-        "context": 1000000,
-        "input": 1000000,
-        "output": 8000
-      }
+      "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
+    }
+  }
+}
+```
+
+### Anthropic Compatible
+
+```jsonc
+"Khip01 - Command Code Anthropic": {
+  "npm": "@ai-sdk/anthropic",
+  "name": "Command Code Anthropic",
+  "options": {
+    "baseURL": "http://127.0.0.1:17077/v1",
+    "apiKey": "anything"
+  },
+  "models": {
+    "deepseek/deepseek-v4-pro": {
+      "name": "DeepSeek V4 Pro",
+      "tool_call": true,
+      "reasoning": true,
+      "limit": { "context": 1048576, "input": 1048576, "output": 8192 }
     }
   }
 }

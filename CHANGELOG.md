@@ -2,9 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.1.0 (unreleased)
+
+### Features
+
+- Anthropic-compatible Messages API (`/v1/messages` and `/messages`)
+  - Full SSE streaming: content_block_start/delta/stop + message_start/delta/stop
+  - Tool use blocks with input_json_delta streaming
+  - Thinking blocks (reasoning mapped to Anthropic format)
+  - Non-streaming endpoint with proper Anthropic response shape
+  - Anthropic Messages protocol -> CC wire format conversion (system, tools, messages)
+  - stop_reason mapping: tool-calls -> tool_use, length -> max_tokens
+
+### Refactor
+
+- Server code split into three clean files:
+  - `server_controller.dart` — HTTP server, request routing, shared endpoints (/models, /health, /token, /info)
+  - `openai_handler.dart` — OpenAI-compatible handler (streaming + non-streaming)
+  - `anthropic_handler.dart` — Anthropic-compatible handler (streaming + non-streaming)
+- Common upstream body builder shared between handlers
+- Removed diagnostic/debug logging; production-level logging only
+- Renamed ProxyServer -> ServerController, extracted handlers to own classes
+- Update OpenCode protocol mapping for production upstream format
+- Fixed config.date field missing from OpenAI handler (was broken after refactor)
+
+### Docs
+
+- README.md trimmed to preview; detailed docs moved to `docs/`
+- New docs: INSTALL.md, API-REFERENCE.md, TUI.md, ARCHITECTURE.md
+- API-REFERENCE.md covers OpenAI, Anthropic, and Zed client configurations
+- AGENTS.md synced with new file structure and endpoints
+
 ## v1.0.0 (2026-07-27)
 
-Initial stable release of CommandCode Bridge, a single-account proxy bridge for Command Code CLI with TUI dashboard.
+Initial stable release of CommandCode Bridge, a single-account proxy bridge for
+Command Code CLI with TUI dashboard.
 
 ### Features
 

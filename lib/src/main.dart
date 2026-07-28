@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'models/account.dart';
 import 'services/log_store.dart';
-import 'server/proxy.dart';
+import 'server/server_controller.dart';
 import 'tui/app.dart';
 
 const _usage = '''CommandCode Bridge
@@ -57,13 +57,13 @@ Future<void> main(List<String> args) async {
   }
 
   final isServerMode = args.length > 1 && args[1] == '--server';
-  final proxyServer = ProxyServer(accountStore: accountStore, configStore: configStore);
+  final server = ServerController(accountStore: accountStore, configStore: configStore);
 
   try {
-    await proxyServer.start();
+    await server.start();
   } catch (e) {
-    stderr.writeln('Failed to start proxy: $e');
-    LogStore.error('Failed to start proxy: $e');
+    stderr.writeln('Failed to start bridge: $e');
+    LogStore.error('Failed to start bridge: $e');
     exit(1);
   }
 
@@ -72,7 +72,7 @@ Future<void> main(List<String> args) async {
     print('CommandCode Bridge running on http://127.0.0.1:${configStore.config.serverPort}');
     print('Press Ctrl+C to stop.');
     await _waitForSignal();
-    proxyServer.stop();
+    server.stop();
     return;
   }
 
@@ -81,11 +81,11 @@ Future<void> main(List<String> args) async {
   final app = CmdBridgeApp(
     accountStore: accountStore,
     configStore: configStore,
-    proxyServer: proxyServer,
+    proxyServer: server,
   );
 
   await runApp(app);
-  proxyServer.stop();
+  server.stop();
 }
 
 Future<void> _waitForSignal() async {
