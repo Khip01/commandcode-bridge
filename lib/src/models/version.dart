@@ -1,1 +1,1 @@
-const bridgeVersion = '1.1.0';
+const bridgeVersion = '1.1.1';

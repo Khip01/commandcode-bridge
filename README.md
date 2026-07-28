@@ -21,7 +21,7 @@ APIs for use with OpenCode, Zed, Cursor, or any compatible client.
 ## Quick Install
 
 ```
-npm install -g ./commandcode-bridge-v1.1.0.tgz
+npm install -g ./commandcode-bridge-v1.1.1.tgz
 commandcode-bridge run
 ```
 

@@ -21,6 +21,7 @@ Commands:
   run --server  Start the bridge in headless server mode
   update        Download and install latest stable release
   help          Show this help screen
+  -v, --version Print version string
 ''';
 
 void _printUsage() => stdout.write(_usage);

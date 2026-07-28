@@ -154,6 +154,7 @@ class AppState extends State<CmdBridgeApp> {
     final msg = _status;
     if (msg.startsWith('Data refreshed') || msg.contains('Copied')) return Colors.green;
     if (msg.startsWith('Fetching') || msg.startsWith('Opening') || msg.startsWith('Copying')) return Colors.cyan;
+    if (msg.startsWith('Use [q] to quit')) return Colors.red;
     if (msg.startsWith('No API') || msg.startsWith('Refresh failed') || msg.contains('failed') || msg.contains('Invalid') || msg.contains('in use') || msg.contains('Cannot')) return Colors.red;
     if (msg.contains('Clear') || msg.contains('Warning') || msg.contains('Restart') || msg.contains('Already') || msg.contains('confirm') || msg.startsWith('No entries')) return Colors.yellow;
     return Colors.cyan;
@@ -249,9 +250,7 @@ class AppState extends State<CmdBridgeApp> {
 
     if (_panel == _Panel.main) {
       if (e.logicalKey == LogicalKey.keyC && e.isControlPressed) {
-        _panel = _Panel.quit;
-        _setStatus('Press q or Ctrl+C to quit', duration: 10);
-        setState(() {});
+        _setStatus('Use [q] to quit', duration: 3);
         return true;
       }
 
@@ -614,9 +613,9 @@ class AppState extends State<CmdBridgeApp> {
   void _doSetPort() {
     final raw = _portCtrl.text.trim();
     if (raw.isEmpty) {
-      _config.config.serverPort = 17077;
+      _config.config.serverPort = AppConfig.defaultPort;
       _config.save();
-      _setStatus('Port reset to default 17077. Restart required.', duration: 5);
+      _setStatus('Port reset to default ${AppConfig.defaultPort}. Restart required.', duration: 5);
       _panel = _Panel.main;
       setState(() {});
       return;
@@ -658,7 +657,7 @@ class AppState extends State<CmdBridgeApp> {
     final email = whoami?.email ?? '';
     final planName = sub != null ? _planDisplayName(sub.planId) : '';
     final isRunning = _proxy.isRunning;
-    final port = _config.config.serverPort;
+    final port = _proxy.isRunning ? _proxy.currentPort : _config.config.serverPort;
 
     return Container(
       padding: const EdgeInsets.all(1),
@@ -1474,7 +1473,7 @@ class AppState extends State<CmdBridgeApp> {
                   child: TextField(
                     controller: _portCtrl,
                     focused: true,
-                    placeholder: '17077',
+                    placeholder: '${AppConfig.defaultPort}',
                     onSubmitted: (_) => _doSetPort(),
                   ),
                 ),
@@ -1500,7 +1499,7 @@ class AppState extends State<CmdBridgeApp> {
               const Text('No recommended ports available',
                   style: TextStyle(color: Colors.red)),
             const SizedBox(height: 1),
-            const Text('Empty = reset to default (17077).',
+            Text('Empty = reset to default (${AppConfig.defaultPort}).',
                 style: TextStyle(color: Colors.grey)),
             const SizedBox(height: 1),
             const Text('Restart required for port change.',
@@ -1529,7 +1528,10 @@ class AppState extends State<CmdBridgeApp> {
       ),
       child: Row(
         children: [
-          Text(_status, style: TextStyle(color: _notifColor())),
+          Text(_status, style: TextStyle(
+            color: _notifColor(),
+            fontWeight: _status.startsWith('Use [q] to quit') ? FontWeight.bold : null,
+          )),
         ],
       ),
     );

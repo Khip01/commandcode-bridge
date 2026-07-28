@@ -18,23 +18,39 @@ class ServerController {
   bool get isRunning => _running;
   String get currentModel => _currentModel;
   int get modelVersion => _modelVersion;
+  int get currentPort => _runningPort;
 
   ServerController({required this.accountStore, required this.configStore});
 
+  int _runningPort = 0;
+
   Future<void> start() async {
     if (_running) return;
-    try {
-      _server = await HttpServer.bind(
-        InternetAddress.loopbackIPv4,
-        configStore.config.serverPort,
-      );
-      _running = true;
-      LogStore.success('Bridge started on port ${configStore.config.serverPort}');
-      _server!.listen(_handleRequest);
-    } catch (e) {
-      LogStore.error('Failed to start server: $e');
-      rethrow;
+
+    var port = configStore.config.serverPort;
+    const maxAttempts = 100;
+
+    for (var i = 0; i < maxAttempts; i++) {
+      try {
+        _server = await HttpServer.bind(
+          InternetAddress.loopbackIPv4,
+          port,
+        );
+        if (port != configStore.config.serverPort) {
+          LogStore.warning('Port ${configStore.config.serverPort} in use, auto-incremented to $port');
+        }
+        _runningPort = port;
+        _running = true;
+        LogStore.success('Bridge started on port $port');
+        _server!.listen(_handleRequest);
+        return;
+      } catch (e) {
+        LogStore.warning('Port $port in use, trying ${port + 1}...');
+        port++;
+      }
     }
+
+    throw Exception('No available port found after $maxAttempts attempts');
   }
 
   void stop() {

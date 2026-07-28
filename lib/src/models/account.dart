@@ -76,6 +76,8 @@ class AccountStore {
 }
 
 class AppConfig {
+  static const defaultPort = 17077;
+
   int serverPort;
   String apiBaseUrl;
   String cliVersion;
@@ -83,14 +85,14 @@ class AppConfig {
   // Port 17077 chosen to avoid neighbors with cobuddy-bridge (20130)
   // and common service ports
   AppConfig({
-    this.serverPort = 17077,
+    this.serverPort = defaultPort,
     this.apiBaseUrl = 'https://api.commandcode.ai',
     this.cliVersion = '1.4.1',
   });
 
   factory AppConfig.fromJson(Map<String, dynamic> json) {
     return AppConfig(
-      serverPort: json['server_port'] as int? ?? 17077,
+      serverPort: json['server_port'] as int? ?? defaultPort,
       apiBaseUrl: json['api_base_url'] as String? ?? 'https://api.commandcode.ai',
       cliVersion: json['cli_version'] as String? ?? '1.4.1',
     );

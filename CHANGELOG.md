@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.1.1 (2026-07-29)
+
+### Fixes
+
+- Ctrl+C: status bar notification only (no quit panel). Use [q] to quit.
+- Auto-increment port: if configured port is in use, bridge tries port+1, +2, ... up to 100 attempts, logs the switch
+- Help screen now includes `-v` / `--version` flag
+
 ## v1.1.0 (2026-07-28)
 
 ### Features

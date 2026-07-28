@@ -22,6 +22,7 @@
 | `p` | Always | Configure proxy port (with availability scan) |
 | `h` | Always | Open help |
 | `q` | Always | Quit (with confirmation) |
+| `Ctrl+C` | Always | Status bar hint (use [q] to quit) |
 | `up/down` | Main | Scroll content / navigate models |
 | `PgUp/PgDn` | Main | Scroll 10 lines |
 | `Enter` | Models page | Copy selected model codename to clipboard |
@@ -46,6 +47,10 @@ Press `[p]` to open port config panel:
 - Available ports scanned dynamically
 - Config saved to `~/.config/commandcode-bridge/config.json`
 - Restart required for change to take effect
+
+If the configured port is in use at startup, the bridge auto-increments
+(port+1, port+2, ...) up to 100 attempts until it finds a free port.
+The switch is logged and the running port is shown in the header.
 
 ## Plan Access
 
