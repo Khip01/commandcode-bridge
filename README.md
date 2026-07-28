@@ -21,8 +21,14 @@ APIs for use with OpenCode, Zed, Cursor, or any compatible client.
 ## Quick Install
 
 ```
-npm install -g ./commandcode-bridge-vX.Y.Z.tgz
+npm install -g ./commandcode-bridge-v1.1.0.tgz
 commandcode-bridge run
+```
+
+Update when a new release is available:
+
+```
+commandcode-bridge update
 ```
 
 Requirements: Node.js 18+, a Command Code account.

@@ -22,10 +22,12 @@ commandcode-bridge/
 │       ├── main.dart                  # CLI wiring (TUI / server modes)
 │       ├── models/
 │       │   ├── account.dart           # Account + config store (port persist)
-│       │   └── models_db.dart         # 44 models with plan access metadata
+│       │   ├── models_db.dart         # 44 models with plan access metadata
+│       │   └── version.dart           # Bridge version constant
 │       ├── services/
 │       │   ├── api_client.dart        # HTTP client for api.commandcode.ai
-│       │   └── log_store.dart         # JSONL activity log (2000 entries max)
+│       │   ├── log_store.dart         # JSONL activity log (2000 entries max)
+│       │   └── updater.dart           # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart  # HTTP server, routing, shared endpoints
 │       │   ├── openai_handler.dart     # OpenAI-compatible proxy

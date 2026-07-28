@@ -118,6 +118,9 @@ jobs:
             # Run the bridge
             commandcode-bridge run          # TUI mode
             commandcode-bridge run --server # Headless server mode
+
+            # Update when a new release is out
+            commandcode-bridge update
             ```
 
             ### Why not `npm install -g Khip01/commandcode-bridge#${{ github.ref_name }}`?

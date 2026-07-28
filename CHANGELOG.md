@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## v1.1.0 (unreleased)
+## v1.1.0 (2026-07-28)
 
 ### Features
 
@@ -13,25 +13,39 @@ All notable changes to this project will be documented in this file.
   - Non-streaming endpoint with proper Anthropic response shape
   - Anthropic Messages protocol -> CC wire format conversion (system, tools, messages)
   - stop_reason mapping: tool-calls -> tool_use, length -> max_tokens
+- Self-update CLI command
+  - `commandcode-bridge update` -- download latest release `.tgz` from GitHub and install via `npm install -g`
+  - `--version` / `-v` flag prints version string
+  - Update cache in `~/.config/commandcode-bridge/update-cache.json` (1-hour TTL, avoids rate limits)
+
+### TUI
+
+- Dual endpoint header: OpenAI (`http://127.0.0.1:{port}/v1`) + Anthropic (`http://127.0.0.1:{port}`)
+- Keymaps: `[o]` copies OpenAI URL, `[a]` copies Anthropic base URL
+- Ctrl+C now opens quit confirmation panel (not force exit)
+  - Quit panel: Y / Enter / second Ctrl+C all confirm quit
+  - Status bar shows red quit hint when panel is open
+- Footer, help page, and Proxy Config (page 6) synced with both endpoints
 
 ### Refactor
 
 - Server code split into three clean files:
-  - `server_controller.dart` — HTTP server, request routing, shared endpoints (/models, /health, /token, /info)
-  - `openai_handler.dart` — OpenAI-compatible handler (streaming + non-streaming)
-  - `anthropic_handler.dart` — Anthropic-compatible handler (streaming + non-streaming)
+  - `server_controller.dart` -- HTTP server, request routing, shared endpoints (/models, /health, /token, /info)
+  - `openai_handler.dart` -- OpenAI-compatible handler (streaming + non-streaming)
+  - `anthropic_handler.dart` -- Anthropic-compatible handler (streaming + non-streaming)
 - Common upstream body builder shared between handlers
 - Removed diagnostic/debug logging; production-level logging only
 - Renamed ProxyServer -> ServerController, extracted handlers to own classes
 - Update OpenCode protocol mapping for production upstream format
 - Fixed config.date field missing from OpenAI handler (was broken after refactor)
+- Extracted version into `lib/src/models/version.dart` constant
 
 ### Docs
 
 - README.md trimmed to preview; detailed docs moved to `docs/`
 - New docs: INSTALL.md, API-REFERENCE.md, TUI.md, ARCHITECTURE.md
 - API-REFERENCE.md covers OpenAI, Anthropic, and Zed client configurations
-- AGENTS.md synced with new file structure and endpoints
+- AGENTS.md synced with new file structure, endpoints, and naming conventions
 
 ## v1.0.0 (2026-07-27)
 

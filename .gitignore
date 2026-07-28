@@ -9,3 +9,6 @@ stage/
 app-linux
 app-mac
 app-win.exe
+
+# Runtime artifacts (update cache)
+update-cache.json

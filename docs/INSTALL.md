@@ -9,6 +9,19 @@ npm install -g ./commandcode-bridge-vX.Y.Z.tgz
 commandcode-bridge run
 ```
 
+## Updating
+
+Once installed, update from the bridge itself:
+
+```bash
+commandcode-bridge update
+```
+
+The update command fetches the latest release tag from GitHub API, downloads the
+`.tgz` asset, removes the previous install, and runs `npm install -g`. The API
+call is cached locally for 1 hour to avoid rate limits. A restart is required
+after updating.
+
 ## Build from Source
 
 ```bash

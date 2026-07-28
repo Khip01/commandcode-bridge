@@ -31,10 +31,12 @@ commandcode-bridge/
 │       ├── main.dart                 # CLI wiring (run, run --server, help)
 │       ├── models/
 │       │   ├── account.dart          # Account + config store (port persist)
-│       │   └── models_db.dart        # 44 models with goAccessible field
+│       │   ├── models_db.dart        # 44 models with goAccessible field
+│       │   └── version.dart          # Bridge version constant
 │       ├── services/
 │       │   ├── api_client.dart       # HTTP client for api.commandcode.ai
-│       │   └── log_store.dart        # JSONL activity log (2000 entries)
+│       │   ├── log_store.dart        # JSONL activity log (2000 entries)
+│       │   └── updater.dart          # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart # HTTP server + routing
 │       │   ├── openai_handler.dart    # OpenAI-compatible proxy
@@ -71,12 +73,14 @@ commandcode-bridge/
 ```bash
 commandcode-bridge run          Start the bridge in TUI mode
 commandcode-bridge run --server Start the bridge in headless server mode
-commandcode-bridge help         Show this help screen
-commandcode-bridge (no args)    Show this help screen
+commandcode-bridge update       Download and install latest stable release
+commandcode-bridge help         Show help screen
+commandcode-bridge --version    Print version string
+commandcode-bridge (no args)    Show help screen
 commandcode-bridge <invalid>    Show help screen, exit 1
 ```
 
-The npm wrapper (`bin/commandcode-bridge.js`) detects `process.platform`, maps to the correct native binary (`app-linux`, `app-mac`, `app-win.exe`), and spawns it with `stdio: 'inherit'`. All args are forwarded. Once launched, Node.js goes idle and the Dart binary takes full control.
+The npm wrapper (`bin/commandcode-bridge.js`) detects `process.platform`, maps to the correct native binary (`app-linux`, `app-mac`, `app-win.exe`), and spawns it with `stdio: 'inherit'`. `--version` is intercepted in the wrapper (reads `package.json`). All other args (including `update`) are forwarded to Dart. Once launched, Node.js goes idle and the Dart binary takes full control.
 
 ## Distribution
 
@@ -246,8 +250,9 @@ Copy to clipboard via platform-specific tools, fallback to OSC 52:
 - Windows: `clip` -> OSC 52
 
 Copy triggers:
-- `[c]` -- Copy endpoint URL (`http://127.0.0.1:17077/v1`)
-- `[Enter]` on model page -- Copy selected model codename
+- `[o]` — Copy OpenAI endpoint URL (`http://127.0.0.1:17077/v1`)
+- `[a]` — Copy Anthropic endpoint URL (`http://127.0.0.1:17077`)
+- `[Enter]` on model page — Copy selected model codename
 
 ## TUI Pages
 
@@ -309,6 +314,7 @@ run.bat server    # Headless server mode
 npm install -g ./commandcode-bridge-vX.Y.Z.tgz
 commandcode-bridge run          # TUI mode
 commandcode-bridge run --server # Headless server mode
+commandcode-bridge update       # Update to latest stable release
 commandcode-bridge help         # Show help
 ```
 

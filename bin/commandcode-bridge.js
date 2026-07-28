@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +20,23 @@ if (platform === "win32") {
 const __dirname = dirname(dirname(fileURLToPath(import.meta.url)));
 const binaryPath = join(__dirname, "bin-executables", binaryName);
 
+function getVersion() {
+  try {
+    const pkgPath = join(__dirname, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.version;
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const args = process.argv.slice(2);
+
+if (args.includes("--version") || args.includes("-v")) {
+  console.log(`CommandCode Bridge v${getVersion()}`);
+  process.exit(0);
+}
+
 if (!existsSync(binaryPath)) {
   console.error(`Binary not found: ${binaryPath}`);
   console.error("The commandcode-bridge package appears to be corrupted or incomplete.");
@@ -28,7 +44,9 @@ if (!existsSync(binaryPath)) {
   process.exit(1);
 }
 
-const child = spawn(binaryPath, process.argv.slice(2), {
+const { spawn } = await import("node:child_process");
+
+const child = spawn(binaryPath, args, {
   stdio: "inherit",
   shell: false,
 });

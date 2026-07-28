@@ -1,6 +1,6 @@
 name: commandcode_bridge
 description: Command Code single-account proxy bridge with OpenAI-compatible endpoint
-version: 1.0.0
+version: 1.1.0
 
 environment:
   sdk: ^3.10.8

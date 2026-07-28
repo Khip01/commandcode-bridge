@@ -2,20 +2,24 @@ import 'dart:async';
 import 'dart:io';
 import 'package:nocterm/nocterm.dart';
 import 'models/account.dart';
+import 'models/version.dart';
 import 'services/log_store.dart';
+import 'services/updater.dart';
 import 'server/server_controller.dart';
 import 'tui/app.dart';
 
-const _usage = '''CommandCode Bridge
+const _usage = '''CommandCode Bridge  v$bridgeVersion
 
 Usage:
   commandcode-bridge run
   commandcode-bridge run --server
+  commandcode-bridge update
   commandcode-bridge help
 
 Commands:
   run           Start the bridge in TUI mode
   run --server  Start the bridge in headless server mode
+  update        Download and install latest stable release
   help          Show this help screen
 ''';
 
@@ -26,13 +30,20 @@ Future<void> main(List<String> args) async {
   final noArgs = args.isEmpty;
   final showHelp = noArgs || args.contains('help') || args.contains('--help') || args.contains('-h');
   final isRun = !noArgs && args.first == 'run';
+  final isUpdate = !noArgs && args.first == 'update';
+
+  if (args.contains('--version') || args.contains('-v')) {
+    stdout.writeln('CommandCode Bridge v$bridgeVersion');
+    return;
+  }
 
   if (showHelp) {
-    if (noArgs) {
-      _printUsage();
-    } else {
-      _printUsage();
-    }
+    _printUsage();
+    return;
+  }
+
+  if (isUpdate) {
+    await _runUpdate();
     return;
   }
 
@@ -86,6 +97,24 @@ Future<void> main(List<String> args) async {
 
   await runApp(app);
   server.stop();
+}
+
+Future<void> _runUpdate() async {
+  stdout.writeln('CommandCode Bridge v$bridgeVersion');
+  stdout.writeln('Checking for stable update...');
+  final updater = Updater();
+  try {
+    final result = await updater.update();
+    if (result.success) {
+      stdout.writeln(result.message);
+      stdout.writeln('Restart the bridge to apply.');
+    } else {
+      stderr.writeln('Update failed: ${result.message}');
+      exit(1);
+    }
+  } finally {
+    updater.dispose();
+  }
 }
 
 Future<void> _waitForSignal() async {
