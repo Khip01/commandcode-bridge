@@ -28,21 +28,23 @@ commandcode-bridge/
 ├── lib/
 │   ├── commandcode_bridge.dart       # Barrel
 │   └── src/
-│       ├── main.dart                 # CLI wiring (run, run --server, help)
+│       ├── main.dart                 # CLI wiring (run, run --server, cost-sync, help)
 │       ├── models/
 │       │   ├── account.dart          # Account + config store (port persist)
 │       │   ├── models_db.dart        # 44 models with goAccessible field
 │       │   └── version.dart          # Bridge version constant
 │       ├── services/
 │       │   ├── api_client.dart       # HTTP client for api.commandcode.ai
+│       │   ├── cost_sync.dart        # Cost sync: detect agents, update configs
 │       │   ├── log_store.dart        # JSONL activity log (2000 entries)
+│       │   ├── pricing_db.dart       # Hardcoded pricing table (44 models)
 │       │   └── updater.dart          # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart # HTTP server + routing
 │       │   ├── openai_handler.dart    # OpenAI-compatible proxy
 │       │   └── anthropic_handler.dart # Anthropic-compatible proxy
 │       └── tui/
-│       └── app.dart              # Nocterm TUI (9 panels + log + bars)
+│       └── app.dart              # Nocterm TUI (10 panels + log + bars)
 ├── docs/
 │   ├── INSTALL.md                  # Install options, platform support
 │   ├── API-REFERENCE.md           # Proxy endpoints, client configs
@@ -74,6 +76,7 @@ commandcode-bridge/
 commandcode-bridge run          Start the bridge in TUI mode
 commandcode-bridge run --server Start the bridge in headless server mode
 commandcode-bridge update       Download and install latest stable release
+commandcode-bridge cost-sync    Sync model pricing to CLI agent configs
 commandcode-bridge help         Show help screen
 commandcode-bridge --version    Print version string
 commandcode-bridge (no args)    Show help screen
@@ -264,6 +267,7 @@ Copy triggers:
 | `4` | Rate Limits | `/alpha/billing/credits` (windowLimits) | 5-hour and weekly usage bars with exceed warnings, remaining, reset times |
 | `5` | Models | `_orderedModels` (sorted by plan, 44 total) | Text list with copy-on-Enter |
 | `6` | Proxy Config | Bridge state + endpoints | Text info |
+| `7` | Cost Sync | Local config files | Detected agents, model list with pricing, sync status |
 
 Visualization uses `ProgressBar` from nocterm with color-coded fill:
 - Green: good (< 80% usage)
@@ -274,14 +278,15 @@ Visualization uses `ProgressBar` from nocterm with color-coded fill:
 
 | Key | Context | Action |
 |-----|---------|--------|
-| `1-6` | Always | Switch info page |
+| `1-7` | Always | Switch info page |
 | `r` | Always | Refresh all API data |
 | `o` | Always | Copy OpenAI endpoint URL to clipboard |
 | `a` | Always | Copy Anthropic endpoint URL to clipboard |
+| `c` | Cost Sync page | Trigger cost sync to selected agent |
 | `p` | Always | Open port configuration panel |
 | `h` | Always | Open help panel |
 | `q` | Always | Open quit confirmation |
-| `up/down` | Main | Scroll / navigate models |
+| `up/down` | Main | Scroll / navigate models / select cost sync agent |
 | `PgUp/PgDn` | Main | Scroll 10 lines |
 | `Enter` | Models page | Copy selected model ID to clipboard |
 | `Ctrl+L` | Always | Toggle log sidebar |

@@ -5,6 +5,8 @@ import '../models/account.dart';
 import '../models/models_db.dart';
 import '../services/api_client.dart';
 import '../services/log_store.dart';
+import '../services/cost_sync.dart';
+import '../services/pricing_db.dart';
 import '../server/server_controller.dart';
 
 class CmdBridgeApp extends StatefulComponent {
@@ -24,7 +26,7 @@ class CmdBridgeApp extends StatefulComponent {
 
 enum _Panel { main, help, quit, login, importKey, portConfig }
 
-enum _InfoPage { account, plan, usage, limits, models, proxy }
+enum _InfoPage { account, plan, usage, limits, models, proxy, cost }
 
 class AppState extends State<CmdBridgeApp> {
   late final _account = component.accountStore;
@@ -55,11 +57,19 @@ class AppState extends State<CmdBridgeApp> {
   final Map<int, bool> _portStatus = {};
   bool _confirmClearLog = false;
 
+  // Cost sync state
+  List<CliAgentInfo> _costAgents = [];
+  int _costSelectedAgent = 0;
+  bool _costSyncing = false;
+  SyncResult? _costLastResult;
+  Set<String> _costLiveModelIds = {};
+  bool _costLiveFetched = false;
+
   final _infoScrollCtrl = ScrollController();
   final _logScrollCtrl = ScrollController();
 
-  static const _pageKeys = ['1', '2', '3', '4', '5', '6'];
-  static const _pageNames = ['Account', 'Plan', 'Usage', 'Limits', 'Models', 'Proxy'];
+  static const _pageKeys = ['1', '2', '3', '4', '5', '6', '7'];
+  static const _pageNames = ['Account', 'Plan', 'Usage', 'Limits', 'Models', 'Proxy', 'Cost'];
 
   @override
   void initState() {
@@ -92,6 +102,8 @@ class AppState extends State<CmdBridgeApp> {
         return const Duration(seconds: 30);
       case _InfoPage.proxy:
         return const Duration(seconds: 1);
+      case _InfoPage.cost:
+        return const Duration(seconds: 30);
     }
   }
 
@@ -314,12 +326,14 @@ class AppState extends State<CmdBridgeApp> {
         case LogicalKey.digit4:
         case LogicalKey.digit5:
         case LogicalKey.digit6:
+        case LogicalKey.digit7:
           final idx = e.logicalKey == LogicalKey.digit1 ? 0
               : e.logicalKey == LogicalKey.digit2 ? 1
               : e.logicalKey == LogicalKey.digit3 ? 2
               : e.logicalKey == LogicalKey.digit4 ? 3
               : e.logicalKey == LogicalKey.digit5 ? 4
-              : 5;
+              : e.logicalKey == LogicalKey.digit6 ? 5
+              : 6;
           _setInfoPage(_InfoPage.values[idx]);
           return true;
 
@@ -334,6 +348,13 @@ class AppState extends State<CmdBridgeApp> {
         case LogicalKey.keyA:
           _copyAnthropicUrl();
           return true;
+
+        case LogicalKey.keyC:
+          if (_infoPage == _InfoPage.cost && !_costSyncing) {
+            _doCostSync();
+            return true;
+          }
+          return false;
 
         case LogicalKey.keyP:
           _showPortConfig();
@@ -360,6 +381,9 @@ class AppState extends State<CmdBridgeApp> {
             _selectedModelIndex--;
             _scrollToModel();
             setState(() {});
+          } else if (_infoPage == _InfoPage.cost && _costSelectedAgent > 0) {
+            _costSelectedAgent--;
+            setState(() {});
           } else {
             _scrollUp(1);
           }
@@ -371,6 +395,12 @@ class AppState extends State<CmdBridgeApp> {
             if (_selectedModelIndex < _orderedModels.length - 1) {
               _selectedModelIndex++;
               _scrollToModel();
+              setState(() {});
+            }
+          } else if (_infoPage == _InfoPage.cost) {
+            _initCostAgents();
+            if (_costSelectedAgent < _costAgents.length - 1) {
+              _costSelectedAgent++;
               setState(() {});
             }
           } else {
@@ -1130,6 +1160,151 @@ class AppState extends State<CmdBridgeApp> {
         add('');
         add('API Key: any value works (bridge uses your saved auth)');
         break;
+
+      case _InfoPage.cost:
+        _initCostAgents();
+        add('Cost Sync - Command Code model pricing', Colors.cyan);
+        add('');
+        add('Sync pricing to your CLI agent. White = will be synced. Grey = not in your config.');
+        add('');
+        add('[c] Sync costs to selected agent', Colors.green);
+        add('');
+
+        add('Detected CLI Agents:', Colors.cyan);
+        add('');
+        if (_costAgents.isEmpty) {
+          add('  No CLI agents detected.', Colors.yellow);
+        }
+        for (var i = 0; i < _costAgents.length; i++) {
+          final agent = _costAgents[i];
+          final prefix = i == _costSelectedAgent ? '\u25b8 ' : '  ';
+          final status = agent.detected ? 'found' : 'not found';
+          final statusColor = agent.detected ? Colors.green : Colors.grey;
+          rows.add(Row(children: [
+            Text('$prefix${agent.displayName.padRight(10)} ', style: TextStyle(
+              color: i == _costSelectedAgent ? Colors.cyan : null,
+              fontWeight: i == _costSelectedAgent ? FontWeight.bold : null,
+            )),
+            Text(status, style: TextStyle(color: statusColor)),
+          ]));
+          if (agent.detected) {
+            rows.add(Text('    ${agent.configPath}', style: TextStyle(color: Colors.grey)));
+          }
+        }
+        add('');
+
+        // Fetch live model IDs from bridge /v1/models once per page visit
+        _ensureLiveModelIds();
+
+        // Get user's bridge models for the selected agent
+        Set<String> userBridgeModels = {};
+        List<BridgeProviderInfo> bridgeProviders = const [];
+        final selectedAgent = _costSelectedAgent < _costAgents.length
+            ? _costAgents[_costSelectedAgent]
+            : null;
+        if (selectedAgent != null && selectedAgent.detected) {
+          if (selectedAgent.type == CliAgentType.opencode) {
+            final info = CostSyncService.getOpenCodeBridgeModels();
+            userBridgeModels = info.models.toSet();
+            bridgeProviders = info.providers;
+          } else {
+            userBridgeModels = CostSyncService.getUserModels(selectedAgent.type).toSet();
+          }
+        }
+
+        if (bridgeProviders.isNotEmpty) {
+          add('Provider:', Colors.grey);
+          for (final prov in bridgeProviders) {
+            add('  - ${prov.name} [${prov.host}:${prov.port}]', Colors.grey);
+          }
+          add('');
+        }
+
+        if (!_costLiveFetched) {
+          add('Fetching live model list from bridge...', Colors.yellow);
+          add('');
+        }
+
+        // Filter PricingDb against live API: never display a price for a
+        // model that the bridge cannot actually call.
+        final liveIds = _costLiveModelIds;
+        final visibleModels = liveIds.isEmpty
+            ? <ModelPricing>[] // API not reachable yet; show nothing
+            : PricingDb.all.where((p) => liveIds.contains(p.modelId)).toList();
+
+        final unknownIds = userBridgeModels
+            .where((id) => PricingDb.byId(id) == null)
+            .toList();
+        if (unknownIds.isNotEmpty) {
+          add('In your config but no pricing data: ${unknownIds.join(", ")}', Colors.yellow);
+          add('');
+        }
+
+        if (visibleModels.isEmpty && _costLiveFetched) {
+          add('No priced models available. Bridge /v1/models did not return any known models.', Colors.red);
+          add('');
+        } else {
+          // Show ALL valid pricing models
+          add('Command Code Models & Pricing (per 1M tokens):', Colors.cyan);
+          add('');
+
+          // Group by category: opensource, premium
+          final osModels = visibleModels.where((p) =>
+              !p.modelId.startsWith('claude-') &&
+              !p.modelId.startsWith('gpt-') &&
+              !p.modelId.startsWith('google/gemini-') &&
+              p.modelId != 'sakana/fugu-ultra' &&
+              p.modelId != 'xai/grok-4.5' &&
+              p.modelId != 'meta/muse-spark-1.1'
+          ).toList();
+          final premModels = visibleModels.where((p) =>
+              p.modelId.startsWith('claude-') ||
+              p.modelId.startsWith('gpt-') ||
+              p.modelId.startsWith('google/gemini-') ||
+              p.modelId == 'sakana/fugu-ultra' ||
+              p.modelId == 'xai/grok-4.5' ||
+              p.modelId == 'meta/muse-spark-1.1'
+          ).toList();
+
+          void _addPricingSection(String label, List<ModelPricing> models) {
+            if (models.isEmpty) return;
+            add(label, Colors.cyan);
+            add('');
+            for (final p in models) {
+              final inConfig = userBridgeModels.contains(p.modelId);
+              final willSync = inConfig && selectedAgent != null && selectedAgent.detected;
+              final color = willSync ? null : Colors.grey;
+              final suffix = willSync ? ' (will be implemented)' : '';
+              final price = p.inputPer1M == 0 && p.outputPer1M == 0
+                  ? 'FREE'
+                  : '\$${p.inputPer1M}/\$${p.outputPer1M}';
+              add('  ${p.modelId.padRight(40)} ${price.padRight(16)}$suffix', color);
+            }
+            add('');
+          }
+
+          _addPricingSection('Open Source', osModels);
+          _addPricingSection('Premium', premModels);
+        }
+
+        if (_costSyncing) {
+          add('Syncing...', Colors.cyan);
+        } else if (_costLastResult != null) {
+          final r = _costLastResult!;
+          for (final msg in r.messages) {
+            add('  $msg');
+          }
+          if (r.success) {
+            add('');
+            add('Done. ${r.updated} updated, ${r.skipped} already configured.', Colors.green);
+          }
+        }
+
+        if (!_costSyncing) {
+          add('');
+          add('[c] Sync costs  [up/down] Select agent', Colors.grey);
+        }
+        break;
     }
 
     return rows;
@@ -1292,6 +1467,7 @@ class AppState extends State<CmdBridgeApp> {
     add('  [4] Rate Limits    - 5-hour and weekly caps');
     add('  [5] Models         - Available models with codenames');
     add('  [6] Proxy Config   - Bridge configuration');
+    add('  [7] Cost Sync      - Sync model pricing to CLI agents');
     add('');
     add('Actions:', Colors.cyan);
     add('');
@@ -1299,6 +1475,7 @@ class AppState extends State<CmdBridgeApp> {
     add('  [up/down] Scroll content / navigate models');
     add('  [Enter]   Copy selected model ID to clipboard');
     add('  [PgUp/PgDn] Scroll faster');
+    add('  [c]       Sync costs (on Cost Sync page)');
     add('');
     add('Log Controls:', Colors.cyan);
     add('');
@@ -1510,6 +1687,70 @@ class AppState extends State<CmdBridgeApp> {
         ),
       ),
     );
+  }
+
+  void _initCostAgents() {
+    if (_costAgents.isNotEmpty) return;
+    _costAgents = CostSyncService.detectAgents();
+    // Select first detected agent by default
+    final firstDetected = _costAgents.indexWhere((a) => a.detected);
+    if (firstDetected >= 0) _costSelectedAgent = firstDetected;
+  }
+
+  void _ensureLiveModelIds() {
+    if (_costLiveFetched) return;
+    _costLiveFetched = true;
+    final port = _proxy.isRunning ? _proxy.currentPort : _config.config.serverPort;
+    Future.microtask(() async {
+      final ids = await CostSyncService.fetchLiveModelIds(port: port);
+      if (ids == null) {
+        LogStore.warning('Cost sync: could not fetch /v1/models from bridge on port $port');
+        return;
+      }
+      _costLiveModelIds = ids;
+      LogStore.info('Cost sync: fetched ${ids.length} live model IDs from bridge');
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _doCostSync() {
+    _initCostAgents();
+    if (_costAgents.isEmpty || _costSelectedAgent >= _costAgents.length) return;
+    final agent = _costAgents[_costSelectedAgent];
+    if (!agent.detected) {
+      _setStatus('${agent.displayName} not found', duration: 3);
+      return;
+    }
+
+    _costSyncing = true;
+    _costLastResult = null;
+    setState(() {});
+
+    Future.microtask(() {
+      List<String> models;
+      if (agent.type == CliAgentType.opencode) {
+        final info = CostSyncService.getOpenCodeBridgeModels();
+        models = info.models;
+      } else {
+        models = CostSyncService.getUserModels(agent.type);
+      }
+
+      if (models.isEmpty) {
+        _costSyncing = false;
+        _costLastResult = SyncResult(
+          updated: 0, skipped: 0, failed: 0,
+          messages: ['No bridge models found in ${agent.displayName} config'],
+        );
+        if (mounted) setState(() {});
+        return;
+      }
+
+      final result = CostSyncService.syncCosts(agent.type, models);
+      _costSyncing = false;
+      _costLastResult = result;
+      LogStore.info('Cost sync ${agent.displayName}: ${result.updated} updated, ${result.skipped} skipped');
+      if (mounted) setState(() {});
+    });
   }
 
   Component _buildStatusBar() {

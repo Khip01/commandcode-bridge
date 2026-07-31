@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.2.0 (2026-07-31)
+
+### Features
+
+- Cost sync: sync Command Code model pricing to CLI agent configs
+  - `commandcode-bridge cost-sync` CLI command with interactive agent selection
+  - Detects installed CLI agents (OpenCode, Aider, Goose)
+  - Filters models by bridge provider only (matches "Command Code" in provider name, localhost only)
+  - Reads user's configured models from each agent's config
+  - Adds/updates per-model cost fields (input, output, cache_read per 1M tokens)
+  - Hardcoded pricing table with 44 models, exactly matching the bridge `/v1/models` API
+  - Live API validation: pricing is checked against the bridge `/v1/models` before syncing
+  - Lists ALL bridge providers found in config (OpenAI and Anthropic compatible), not just one
+  - JSONC parser with trailing comma support for OpenCode configs
+- TUI page 7 "Cost Sync" with keymap [7]
+  - Shows ALL Command Code models with pricing (grouped: Open Source, Premium)
+  - Models in bridge config: bright white + "(will be implemented)"
+  - Models not in config: greyed out
+  - [c] keymap triggers sync with progress feedback (hint shown on the page)
+  - [up/down] agent selection when multiple agents detected
+
 ## v1.1.1 (2026-07-29)
 
 ### Fixes
