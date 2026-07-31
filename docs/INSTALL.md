@@ -22,6 +22,17 @@ The update command fetches the latest release tag from GitHub API, downloads the
 call is cached locally for 1 hour to avoid rate limits. A restart is required
 after updating.
 
+## Syncing Model Pricing
+
+Sync Command Code pricing into your CLI agent configs (OpenCode, Aider, Goose):
+
+```bash
+commandcode-bridge cost-sync
+```
+
+Or use the TUI Cost Sync page (`[7]` in the dashboard). Pricing is validated
+against the live bridge `/v1/models` before anything is written.
+
 ## Build from Source
 
 ```bash

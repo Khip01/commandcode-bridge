@@ -100,3 +100,16 @@ The API key must be entered through **Agent Settings** (`agent: open settings` -
 After saving, open Agent Settings, find the provider, enter any API key
 (the bridge uses your saved Command Code auth, the value does not matter),
 and the model will appear in the model dropdown.
+
+## Cost Tracking
+
+To make your CLI agent report real Command Code costs, run:
+
+```bash
+commandcode-bridge cost-sync
+```
+
+or press `[c]` on the Cost Sync page in the TUI. This writes per-model cost
+fields (input, output, cache_read per 1M tokens) into your agent configs.
+The pricing table is validated against the live bridge `/v1/models` endpoint
+before syncing.

@@ -19,21 +19,23 @@ commandcode-bridge/
 ├── lib/
 │   ├── commandcode_bridge.dart        # Barrel export
 │   └── src/
-│       ├── main.dart                  # CLI wiring (TUI / server modes)
+│       ├── main.dart                  # CLI wiring (TUI / server / cost-sync modes)
 │       ├── models/
 │       │   ├── account.dart           # Account + config store (port persist)
 │       │   ├── models_db.dart         # 44 models with plan access metadata
 │       │   └── version.dart           # Bridge version constant
 │       ├── services/
 │       │   ├── api_client.dart        # HTTP client for api.commandcode.ai
+│       │   ├── cost_sync.dart         # Cost sync: detect agents, update configs
 │       │   ├── log_store.dart         # JSONL activity log (2000 entries max)
+│       │   ├── pricing_db.dart        # Hardcoded pricing table (44 models)
 │       │   └── updater.dart           # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart  # HTTP server, routing, shared endpoints
 │       │   ├── openai_handler.dart     # OpenAI-compatible proxy
 │       │   └── anthropic_handler.dart  # Anthropic-compatible proxy
 │       └── tui/
-│           └── app.dart               # Nocterm TUI (9 panels + log sidebar)
+│           └── app.dart               # Nocterm TUI (10 panels + log sidebar)
 ├── scripts/
 │   └── stage-npm-package.mjs         # CI packaging helper
 ├── docs/
@@ -60,6 +62,21 @@ Client <- OpenAI SSE / Anthropic SSE
 
 Client -> POST /v1/messages           -> Same flow, Anthropic format
 ```
+
+## Cost Sync
+
+The `cost-sync` CLI command and TUI page 7 keep CLI agent cost tracking in
+sync with Command Code pricing.
+
+- `pricing_db.dart` holds a hardcoded pricing table (44 models) matching the
+  live bridge `/v1/models` API
+- `cost_sync.dart` detects installed CLI agents (OpenCode, Aider, Goose),
+  reads each agent's configured models, and writes per-model cost fields
+  (input, output, cache_read per 1M tokens)
+- Only providers that point at the bridge (localhost base URL) and are named
+  "Command Code" are considered bridge providers; all are listed
+- Pricing is validated against the live `/v1/models` endpoint before syncing
+- OpenCode configs (JSONC) are parsed with comment and trailing-comma support
 
 ## Protocol Translation
 
