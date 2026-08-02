@@ -155,6 +155,7 @@ class AllApiData {
   final SubscriptionData? subscription;
   final CreditsData? credits;
   final UsageSummaryData? usage;
+  final List<LiveModelInfo> models;
   final List<String> errors;
 
   AllApiData({
@@ -162,10 +163,29 @@ class AllApiData {
     this.subscription,
     this.credits,
     this.usage,
+    this.models = const [],
     this.errors = const [],
   });
 
   bool get hasErrors => errors.isNotEmpty;
+}
+
+class LiveModelInfo {
+  final String id;
+  final String name;
+  final int contextLength;
+
+  const LiveModelInfo({
+    required this.id,
+    required this.name,
+    this.contextLength = 0,
+  });
+
+  factory LiveModelInfo.fromJson(Map<String, dynamic> json) => LiveModelInfo(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? (json['id'] as String? ?? ''),
+        contextLength: (json['context_length'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class ApiClient {
@@ -265,18 +285,46 @@ class ApiClient {
     }
   }
 
+  Future<List<LiveModelInfo>?> fetchModels({bool logErrors = true}) async {
+    try {
+      final res = await _client.get(
+        Uri.parse('$baseUrl/provider/v1/models'),
+        headers: _headers,
+      );
+      if (res.statusCode != 200) {
+        if (logErrors) LogStore.error('models returned ${res.statusCode}');
+        return null;
+      }
+      final data = jsonDecode(res.body);
+      final raw = data is Map<String, dynamic>
+          ? (data['data'] as List<dynamic>? ?? const [])
+          : (data as List<dynamic>? ?? const []);
+      final models = raw
+          .whereType<Map<String, dynamic>>()
+          .map(LiveModelInfo.fromJson)
+          .where((m) => m.id.isNotEmpty)
+          .toList();
+      return models;
+    } catch (e) {
+      if (logErrors) LogStore.error('models failed: $e');
+      return null;
+    }
+  }
+
   Future<AllApiData> fetchAll({bool logSummary = true, bool logErrors = true}) async {
     final whoamiF = fetchWhoami(logErrors: logErrors);
     final creditsF = fetchCredits(logErrors: logErrors);
     final subF = fetchSubscription(logErrors: logErrors);
     final usageF = fetchUsage(logErrors: logErrors);
+    final modelsF = fetchModels(logErrors: logErrors);
 
-    final results = await Future.wait([whoamiF, creditsF, subF, usageF]);
+    final results = await Future.wait([whoamiF, creditsF, subF, usageF, modelsF]);
     final errors = <String>[];
     if (results[0] == null) errors.add('whoami');
     if (results[1] == null) errors.add('credits');
     if (results[2] == null) errors.add('subscription');
     if (results[3] == null) errors.add('usage');
+    if (results[4] == null) errors.add('models');
 
     if (logSummary) {
       LogStore.info('Fetched API data (${errors.isEmpty ? "all ok" : "errors: ${errors.join(",")}"})');
@@ -287,6 +335,7 @@ class ApiClient {
       credits: results[1] as CreditsData?,
       subscription: results[2] as SubscriptionData?,
       usage: results[3] as UsageSummaryData?,
+      models: results[4] as List<LiveModelInfo>? ?? const [],
       errors: errors,
     );
   }

@@ -20,6 +20,18 @@ class ServerController {
   int get modelVersion => _modelVersion;
   int get currentPort => _runningPort;
 
+  /// Live model IDs fetched from the Command Code API by the TUI on refresh.
+  /// `/v1/models` merges these with `ModelsDb.all` so newly released models
+  /// (e.g. ling-3.0-flash-free) are advertised even before a bridge release.
+  List<String> _liveModelIds = const [];
+  List<String> get liveModelIds => _liveModelIds;
+
+  void setLiveModelIds(List<String> ids) {
+    if (ids.isEmpty) return;
+    _liveModelIds = ids;
+    LogStore.info('Server: updated live model list (${ids.length} models)');
+  }
+
   ServerController({required this.accountStore, required this.configStore});
 
   int _runningPort = 0;
@@ -142,12 +154,40 @@ class ServerController {
   }
 
   void _handleModels(HttpRequest request) {
-    final models = ModelsDb.all.map((m) => {
-          'id': m.id,
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final byId = <String, Map<String, dynamic>>{};
+    final known = <String>{};
+
+    for (final m in ModelsDb.all) {
+      known.add(m.id);
+      byId[m.id] = {
+        'id': m.id,
+        'object': 'model',
+        'created': now,
+        'owned_by': m.category,
+        'name': m.displayName,
+        'context_length': m.contextWindow,
+      };
+    }
+
+    // Merge live models from the Command Code API so new releases are
+    // advertised even without a bridge update. Unknown live models default to
+    // `owned_by: command-code` and are still proxyable.
+    for (final id in _liveModelIds) {
+      if (!known.contains(id)) {
+        byId[id] = {
+          'id': id,
           'object': 'model',
-          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          'owned_by': m.category,
-        }).toList();
+          'created': now,
+          'owned_by': 'command-code',
+          'name': id,
+          'context_length': 0,
+        };
+      }
+    }
+
+    final models = byId.values.toList()
+      ..sort((a, b) => (a['id'] as String).compareTo(b['id'] as String));
 
     _sendJson(request.response, 200, {
       'object': 'list',

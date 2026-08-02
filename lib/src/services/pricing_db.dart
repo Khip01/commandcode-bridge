@@ -1,3 +1,5 @@
+import '../models/models_db.dart';
+
 class ModelPricing {
   final String modelId;
   final String displayName;
@@ -29,13 +31,8 @@ class PricingDb {
   // If you have manually verified a model exists but it is not yet in the
   // /v1/models list, add it to `all` with a clearly-marked entry.
   static const List<String> knownMissingFromApi = [
-    'laguna-s-2.1-free',
-    'ling-3.0-flash-free',
-    'inkling/Inkling',
-    'inkling/Inkling-Small',
     'claude-opus-4-6',
     'claude-sonnet-4-5',
-    'google/gemini-3.5-flash-lite',
   ];
 
   static const List<ModelPricing> all = [
@@ -130,6 +127,13 @@ class PricingDb {
       outputPer1M: 3.00,
       cacheReadPer1M: 0.10,
     ),
+    ModelPricing(
+      modelId: 'moonshotai/Kimi-K3',
+      displayName: 'Kimi K3',
+      inputPer1M: 3.00,
+      outputPer1M: 15.00,
+      cacheReadPer1M: 0.30,
+    ),
 
     // === Open Source - Qwen ===
     ModelPricing(
@@ -162,6 +166,14 @@ class PricingDb {
       inputPer1M: 0.50,
       outputPer1M: 3.00,
       cacheReadPer1M: 0.10,
+    ),
+    ModelPricing(
+      modelId: 'Qwen/Qwen3.7-Flash',
+      displayName: 'Qwen 3.7 Flash',
+      inputPer1M: 0.10,
+      outputPer1M: 0.40,
+      cacheReadPer1M: 0.02,
+      cacheWritePer1M: 0.125,
     ),
 
     // === Open Source - Stepfun ===
@@ -233,6 +245,36 @@ class PricingDb {
       inputPer1M: 0.60,
       outputPer1M: 2.40,
       cacheReadPer1M: 0.12,
+    ),
+
+    // === Open Source - Thinking Machines / Free ===
+    ModelPricing(
+      modelId: 'thinkingmachines/inkling',
+      displayName: 'Thinking Machines Inkling',
+      inputPer1M: 1.00,
+      outputPer1M: 4.05,
+      cacheReadPer1M: 0.17,
+    ),
+    ModelPricing(
+      modelId: 'thinkingmachines/inkling-small',
+      displayName: 'Thinking Machines Inkling Small',
+      inputPer1M: 0.50,
+      outputPer1M: 1.20,
+      cacheReadPer1M: 0.10,
+    ),
+    ModelPricing(
+      modelId: 'poolside/laguna-s-2.1-free',
+      displayName: 'Poolside Laguna S 2.1 Free',
+      inputPer1M: 0,
+      outputPer1M: 0,
+      cacheReadPer1M: 0,
+    ),
+    ModelPricing(
+      modelId: 'inclusionai/ling-3.0-flash-free',
+      displayName: 'InclusionAI Ling 3.0 Flash Free',
+      inputPer1M: 0,
+      outputPer1M: 0,
+      cacheReadPer1M: 0,
     ),
 
     // === Premium - Anthropic ===
@@ -349,11 +391,25 @@ class PricingDb {
 
     // === Premium - Google ===
     ModelPricing(
+      modelId: 'google/gemini-3.6-flash',
+      displayName: 'Gemini 3.6 Flash',
+      inputPer1M: 1.50,
+      outputPer1M: 7.50,
+      cacheReadPer1M: 0.15,
+    ),
+    ModelPricing(
       modelId: 'google/gemini-3.5-flash',
       displayName: 'Gemini 3.5 Flash',
       inputPer1M: 1.50,
       outputPer1M: 9.00,
       cacheReadPer1M: 0.15,
+    ),
+    ModelPricing(
+      modelId: 'google/gemini-3.5-flash-lite',
+      displayName: 'Gemini 3.5 Flash Lite',
+      inputPer1M: 0.30,
+      outputPer1M: 2.50,
+      cacheReadPer1M: 0.03,
     ),
     ModelPricing(
       modelId: 'google/gemini-3.1-flash-lite',
@@ -398,19 +454,22 @@ class PricingDb {
 
   static List<ModelPricing> byCategory(String category) {
     return all.where((p) {
+      final info = ModelsDb.byId(p.modelId);
+      if (info != null) return info.category == category;
+      // Fallback heuristic for any model not yet in ModelsDb.
       if (category == 'opensource') {
         return !p.modelId.startsWith('claude-') &&
             !p.modelId.startsWith('gpt-') &&
             !p.modelId.startsWith('google/gemini-') &&
             p.modelId != 'sakana/fugu-ultra' &&
-            p.modelId != 'xai/grok-4.5';
+            p.modelId != 'meta/muse-spark-1.1';
       }
       if (category == 'premium') {
         return p.modelId.startsWith('claude-') ||
             p.modelId.startsWith('gpt-') ||
             p.modelId.startsWith('google/gemini-') ||
             p.modelId == 'sakana/fugu-ultra' ||
-            p.modelId == 'xai/grok-4.5';
+            p.modelId == 'meta/muse-spark-1.1';
       }
       return true;
     }).toList();

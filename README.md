@@ -14,7 +14,8 @@ APIs for use with OpenCode, Zed, Cursor, or any compatible client.
 - **OpenAI Compatible** — `/v1/chat/completions` endpoint, streaming + non-streaming
 - **Anthropic Compatible** — `/v1/messages` endpoint with full SSE streaming
 - **TUI Dashboard** — 7 info pages with progress bars and real-time log
-- **Plan-Aware** — Models sorted by plan access level
+- **Dynamic Models** — Fetches the live Command Code model catalog from `/provider/v1/models` on refresh, so newly released models appear automatically
+- **Plan-Aware** — Models grouped by what your plan can actually use (Go/Pro/Max + credits override)
 - **Cost Sync** — Sync Command Code model pricing to CLI agent configs (OpenCode, Aider, Goose)
 - **Port Config** — Change port via TUI with availability scan, persisted across restarts
 - **Cross-platform** — Linux (primary), macOS/Windows (experimental)
@@ -22,7 +23,7 @@ APIs for use with OpenCode, Zed, Cursor, or any compatible client.
 ## Quick Install
 
 ```
-npm install -g ./commandcode-bridge-v1.2.0.tgz
+npm install -g ./commandcode-bridge-v1.3.0.tgz
 commandcode-bridge run
 ```
 

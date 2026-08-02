@@ -9,7 +9,7 @@ Base URL: `http://127.0.0.1:17077/v1`
 | Path | Method | Description |
 |------|--------|-------------|
 | `/v1/chat/completions` | POST | Chat completions (stream + non-stream) |
-| `/v1/models` | GET | List 44 available models |
+| `/v1/models` | GET | List available models (live API merged with bundled, 52+) |
 | `/v1/health` | GET | Health check |
 | `/v1/token` | GET | Get current access token |
 | `/v1/info` | GET | Bridge info and config |

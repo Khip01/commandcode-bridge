@@ -22,13 +22,13 @@ commandcode-bridge/
 │       ├── main.dart                  # CLI wiring (TUI / server / cost-sync modes)
 │       ├── models/
 │       │   ├── account.dart           # Account + config store (port persist)
-│       │   ├── models_db.dart         # 44 models with plan access metadata
+│       │   ├── models_db.dart         # 52 bundled models + plan access metadata
 │       │   └── version.dart           # Bridge version constant
 │       ├── services/
-│       │   ├── api_client.dart        # HTTP client for api.commandcode.ai
+│       │   ├── api_client.dart        # HTTP client for api.commandcode.ai (incl. /provider/v1/models)
 │       │   ├── cost_sync.dart         # Cost sync: detect agents, update configs
 │       │   ├── log_store.dart         # JSONL activity log (2000 entries max)
-│       │   ├── pricing_db.dart        # Hardcoded pricing table (44 models)
+│       │   ├── pricing_db.dart        # Hardcoded pricing table (52 models)
 │       │   └── updater.dart           # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart  # HTTP server, routing, shared endpoints
@@ -68,7 +68,7 @@ Client -> POST /v1/messages           -> Same flow, Anthropic format
 The `cost-sync` CLI command and TUI page 7 keep CLI agent cost tracking in
 sync with Command Code pricing.
 
-- `pricing_db.dart` holds a hardcoded pricing table (44 models) matching the
+- `pricing_db.dart` holds a hardcoded pricing table (52 models) matching the
   live bridge `/v1/models` API
 - `cost_sync.dart` detects installed CLI agents (OpenCode, Aider, Goose),
   reads each agent's configured models, and writes per-model cost fields
@@ -77,6 +77,23 @@ sync with Command Code pricing.
   "Command Code" are considered bridge providers; all are listed
 - Pricing is validated against the live `/v1/models` endpoint before syncing
 - OpenCode configs (JSONC) are parsed with comment and trailing-comma support
+
+## Dynamic Model List
+
+The bridge does not rely solely on its bundled registry. On every TUI refresh
+(`[r]` or auto-refresh) it calls the official Command Code endpoint
+`GET /provider/v1/models`, caches the result in memory, and merges it with the
+52 bundled `ModelsDb` models. This means newly released models (for example
+`inclusionai/ling-3.0-flash-free`, `poolside/laguna-s-2.1-free`) are served by
+`/v1/models` and shown in the TUI without needing a bridge release.
+
+- `api_client.fetchModels()` returns the live model list from the API
+- `ServerController.setLiveModelIds()` updates the in-memory cache used by `/v1/models`
+- Unknown live models are still proxyable and appear with `owned_by: command-code`
+- TUI page 5 groups models by plan access (Go/Pro/Max) using `PlanAccess`, which
+  mirrors the official CLI's `evaluateModelAccess`: Go = open source + GPT-5.6
+  Luna / Grok 4.5, Pro blocks Fable/Opus + Fugu Ultra, and a credits override
+  (purchased or free credits) grants access to everything
 
 ## Protocol Translation
 

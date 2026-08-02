@@ -61,7 +61,6 @@ class AppState extends State<CmdBridgeApp> {
   List<CliAgentInfo> _costAgents = [];
   int _costSelectedAgent = 0;
   bool _costSyncing = false;
-  SyncResult? _costLastResult;
   Set<String> _costLiveModelIds = {};
   bool _costLiveFetched = false;
 
@@ -165,6 +164,8 @@ class AppState extends State<CmdBridgeApp> {
   Color _notifColor() {
     final msg = _status;
     if (msg.startsWith('Data refreshed') || msg.contains('Copied')) return Colors.green;
+    if (msg.startsWith('Cost sync') && msg.contains('failed')) return Colors.red;
+    if (msg.startsWith('Cost sync')) return Colors.green;
     if (msg.startsWith('Fetching') || msg.startsWith('Opening') || msg.startsWith('Copying')) return Colors.cyan;
     if (msg.startsWith('Use [q] to quit')) return Colors.red;
     if (msg.startsWith('No API') || msg.startsWith('Refresh failed') || msg.contains('failed') || msg.contains('Invalid') || msg.contains('in use') || msg.contains('Cannot')) return Colors.red;
@@ -299,7 +300,7 @@ class AppState extends State<CmdBridgeApp> {
           setState(() {});
           return true;
         }
-        if (e.logicalKey == LogicalKey.keyO) {
+        if (e.logicalKey == LogicalKey.keyO && e.isShiftPressed) {
           final n = LogStore.countBeforeToday();
           if (n == 0) {
             _setStatus('No entries before today', duration: 3);
@@ -466,6 +467,13 @@ class AppState extends State<CmdBridgeApp> {
     final client = ApiClient(apiKey: acc.apiKey, config: _config.config);
     try {
       _apiData = await client.fetchAll(logSummary: !silent, logErrors: !silent);
+      final live = _apiData?.models ?? const <LiveModelInfo>[];
+      if (live.isNotEmpty) {
+        _proxy.setLiveModelIds(live.map((m) => m.id).toList());
+        if (!silent) {
+          LogStore.info('Live model list: ${live.length} models from API');
+        }
+      }
       if (!silent) {
         LogStore.info('Data refresh completed');
         _setStatus('Data refreshed', duration: 3);
@@ -494,12 +502,58 @@ class AppState extends State<CmdBridgeApp> {
 
   void _initOrderedModels() {
     final s = _apiData?.subscription;
-    final isGo = s != null && ModelsDb.isGoPlan(s.planId);
-    if (isGo) {
-      _orderedModels = [...ModelsDb.opensource, ...ModelsDb.premium];
-    } else {
-      _orderedModels = [...ModelsDb.premium, ...ModelsDb.opensource];
-    }
+    final planId = s?.planId;
+    final credits = _apiData?.credits;
+    final purchased = credits?.purchasedCredits ?? 0;
+    final free = credits?.freeCredits ?? 0;
+
+    final live = _apiData?.models ?? const <LiveModelInfo>[];
+    final bundledIds = ModelsDb.all.map((m) => m.id).toSet();
+
+    // Live-only models (released after this bridge version) default to
+    // go-accessible, matching the CLI's behavior for unknown-category models.
+    final liveOnly = live
+        .where((m) => !bundledIds.contains(m.id))
+        .map((m) => ModelInfo(
+              id: m.id,
+              displayName: m.name.isNotEmpty ? m.name : m.id,
+              category: 'opensource',
+              contextWindow: m.contextLength,
+            ))
+        .toList();
+
+    final all = [...ModelsDb.all, ...liveOnly];
+
+    // Sort so that models accessible on the user's plan come first, then free
+    // usage before billing, then by provider, then by id. This keeps all
+    // "available on Go" models grouped at the top regardless of category.
+    all.sort((a, b) {
+      final accA = PlanAccess.isAccessible(
+        model: a,
+        planId: planId,
+        purchasedCredits: purchased,
+        freeCredits: free,
+      );
+      final accB = PlanAccess.isAccessible(
+        model: b,
+        planId: planId,
+        purchasedCredits: purchased,
+        freeCredits: free,
+      );
+      if (accA != accB) return accA ? -1 : 1;
+
+      final freeA = ModelsDb.isFree(a.id);
+      final freeB = ModelsDb.isFree(b.id);
+      if (freeA != freeB) return freeA ? -1 : 1;
+
+      final rA = ModelsDb.providerRank(a.id);
+      final rB = ModelsDb.providerRank(b.id);
+      if (rA != rB) return rA - rB;
+
+      return a.id.compareTo(b.id);
+    });
+
+    _orderedModels = all;
     _modelsInitialized = true;
   }
 
@@ -1248,23 +1302,32 @@ class AppState extends State<CmdBridgeApp> {
           add('Command Code Models & Pricing (per 1M tokens):', Colors.cyan);
           add('');
 
-          // Group by category: opensource, premium
-          final osModels = visibleModels.where((p) =>
-              !p.modelId.startsWith('claude-') &&
-              !p.modelId.startsWith('gpt-') &&
-              !p.modelId.startsWith('google/gemini-') &&
-              p.modelId != 'sakana/fugu-ultra' &&
-              p.modelId != 'xai/grok-4.5' &&
-              p.modelId != 'meta/muse-spark-1.1'
-          ).toList();
-          final premModels = visibleModels.where((p) =>
-              p.modelId.startsWith('claude-') ||
-              p.modelId.startsWith('gpt-') ||
-              p.modelId.startsWith('google/gemini-') ||
-              p.modelId == 'sakana/fugu-ultra' ||
-              p.modelId == 'xai/grok-4.5' ||
-              p.modelId == 'meta/muse-spark-1.1'
-          ).toList();
+          // Group by plan access first: what the user's plan can use vs not.
+          final sub = _apiData?.subscription;
+          final planId = sub?.planId;
+          final credits = _apiData?.credits;
+          final purchased = credits?.purchasedCredits ?? 0;
+          final free = credits?.freeCredits ?? 0;
+
+          final goModels = <ModelPricing>[];
+          final proModels = <ModelPricing>[];
+          for (final p in visibleModels) {
+            final info = ModelsDb.byId(p.modelId);
+            final acc = info == null
+                ? true
+                : PlanAccess.isAccessible(
+                    model: info,
+                    planId: planId,
+                    purchasedCredits: purchased,
+                    freeCredits: free,
+                  );
+            (acc ? goModels : proModels).add(p);
+          }
+          // Live models known to the API but with no local pricing data yet.
+          final unpriced = liveIds
+              .where((id) => PricingDb.byId(id) == null)
+              .where((id) => !PricingDb.knownMissingFromApi.contains(id))
+              .toList();
 
           void _addPricingSection(String label, List<ModelPricing> models) {
             if (models.isEmpty) return;
@@ -1283,27 +1346,27 @@ class AppState extends State<CmdBridgeApp> {
             add('');
           }
 
-          _addPricingSection('Open Source', osModels);
-          _addPricingSection('Premium', premModels);
-        }
-
-        if (_costSyncing) {
-          add('Syncing...', Colors.cyan);
-        } else if (_costLastResult != null) {
-          final r = _costLastResult!;
-          for (final msg in r.messages) {
-            add('  $msg');
+          final isGo = planId != null && ModelsDb.isGoPlan(planId);
+          if (isGo) {
+            _addPricingSection('Available on Go', goModels);
+            _addPricingSection('Requires Pro / Max', proModels);
+          } else {
+            _addPricingSection('Available on your plan', goModels);
+            _addPricingSection('Blocked on your plan', proModels);
           }
-          if (r.success) {
+
+          if (unpriced.isNotEmpty) {
+            add('Available but no pricing data (not yet priced):', Colors.yellow);
             add('');
-            add('Done. ${r.updated} updated, ${r.skipped} already configured.', Colors.green);
+            for (final id in unpriced) {
+              add('  ${id.padRight(40)} no pricing data', Colors.yellow);
+            }
+            add('');
           }
         }
 
-        if (!_costSyncing) {
-          add('');
-          add('[c] Sync costs  [up/down] Select agent', Colors.grey);
-        }
+        add('');
+        add('[c] Sync costs  [up/down] Select agent', Colors.grey);
         break;
     }
 
@@ -1314,45 +1377,82 @@ class AppState extends State<CmdBridgeApp> {
     final rows = <Component>[];
     _initOrderedModels();
     final s = _apiData?.subscription;
-    final isGo = s != null && ModelsDb.isGoPlan(s.planId);
+    final planId = s?.planId;
+    final isGo = s != null && ModelsDb.isGoPlan(planId);
+    final credits = _apiData?.credits;
+    final purchased = credits?.purchasedCredits ?? 0;
+    final free = credits?.freeCredits ?? 0;
 
-    String? currentSection;
+    String? section; // 'accessible' | 'blocked'
+    String? usage; // 'free' | 'billing'
+    String? provider;
+
     for (var i = 0; i < _orderedModels.length; i++) {
       final m = _orderedModels[i];
-      final section = isGo
-          ? (m.goAccessible ? 'accessible' : 'blocked')
-          : m.category;
-      if (section != currentSection) {
-        currentSection = section;
+      final accessible = PlanAccess.isAccessible(
+        model: m,
+        planId: planId,
+        purchasedCredits: purchased,
+        freeCredits: free,
+      );
+      final curSection = accessible ? 'accessible' : 'blocked';
+      final isFreeModel = ModelsDb.isFree(m.id);
+      final curUsage = isFreeModel ? 'free' : 'billing';
+      final curProvider = ModelsDb.providerOf(m.id);
+
+      if (curSection != section) {
+        section = curSection;
+        usage = null;
+        provider = null;
         rows.add(const SizedBox(height: 1));
-        String label;
-        Color color;
-        if (isGo) {
-          if (section == 'accessible') {
-            label = 'Open Source Models (accessible)';
-            color = Colors.green;
-          } else {
-            label = 'Premium Models (Go cannot access)';
-            color = Colors.grey;
-          }
+        if (curSection == 'accessible') {
+          rows.add(_modelHeader(
+            isGo ? 'Models available on Go' : 'Models available on ${_planDisplayName(planId ?? '')}',
+            Colors.green,
+          ));
         } else {
-          label = section == 'premium' ? 'Premium Models' : 'Open Source Models';
-          color = Colors.cyan;
+          rows.add(_modelHeader(
+            isGo
+                ? 'Premium Models (Go cannot access)'
+                : 'Premium Models (blocked on ${_planDisplayName(planId ?? '')})',
+            Colors.grey,
+          ));
         }
+      }
+
+      if (curUsage != usage) {
+        usage = curUsage;
+        provider = null;
+        rows.add(const SizedBox(height: 1));
+        if (curUsage == 'free') {
+          rows.add(Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Text('Free usage', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+          ));
+        } else {
+          rows.add(Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Text('Billing', style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold)),
+          ));
+        }
+      }
+
+      if (curProvider != provider) {
+        provider = curProvider;
         rows.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 0),
-          child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(curProvider, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
         ));
       }
+
       final prefix = i == _selectedModelIndex ? '\u25b8 ' : '  ';
       final ctx = _fmtCtx(m.contextWindow);
       final reas = m.reasoningEfforts.isNotEmpty
           ? ' [reasoning: ${m.reasoningEfforts.join(",")}]'
           : '';
-      final accessible = isGo ? m.goAccessible : true;
-      final label = accessible ? '' : ' [Go cant access]';
+      final label = accessible ? '' : ' [Not on Go]';
       rows.add(Padding(
-        padding: const EdgeInsets.symmetric(vertical: 0),
+        padding: const EdgeInsets.only(left: 6),
         child: Text('$prefix${m.id}  (${ctx}ctx$reas)$label',
             style: TextStyle(
               color: i == _selectedModelIndex
@@ -1365,6 +1465,11 @@ class AppState extends State<CmdBridgeApp> {
     }
     return rows;
   }
+
+  Padding _modelHeader(String label, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 0),
+        child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+      );
 
   String _planDisplayName(String planId) {
     if (planId.startsWith('individual-')) {
@@ -1482,7 +1587,7 @@ class AppState extends State<CmdBridgeApp> {
     add('  [Ctrl+L]  Toggle log sidebar');
     add('  [f]       Toggle log fullscreen / sidebar');
     add('  [C]       Clear all log entries');
-    add('  [O]       Clear entries before today');
+    add('  [Shift+O] Clear entries before today');
     add('');
     add('Other:', Colors.cyan);
     add('');
@@ -1723,7 +1828,7 @@ class AppState extends State<CmdBridgeApp> {
     }
 
     _costSyncing = true;
-    _costLastResult = null;
+    _setStatus('Syncing costs to ${agent.displayName}...', duration: 0);
     setState(() {});
 
     Future.microtask(() {
@@ -1737,18 +1842,18 @@ class AppState extends State<CmdBridgeApp> {
 
       if (models.isEmpty) {
         _costSyncing = false;
-        _costLastResult = SyncResult(
-          updated: 0, skipped: 0, failed: 0,
-          messages: ['No bridge models found in ${agent.displayName} config'],
-        );
+        _setStatus('Cost sync ${agent.displayName}: no bridge models found', duration: 5);
         if (mounted) setState(() {});
         return;
       }
 
       final result = CostSyncService.syncCosts(agent.type, models);
       _costSyncing = false;
-      _costLastResult = result;
       LogStore.info('Cost sync ${agent.displayName}: ${result.updated} updated, ${result.skipped} skipped');
+      final summary = 'Cost sync ${agent.displayName}: '
+          '${result.updated} updated, ${result.skipped} already configured'
+          '${result.failed > 0 ? ', ${result.failed} failed' : ''}';
+      _setStatus(summary, duration: 6);
       if (mounted) setState(() {});
     });
   }
@@ -1846,7 +1951,7 @@ class AppState extends State<CmdBridgeApp> {
                   Text(_logFullscreen ? 'side ' : 'ull ', style: TextStyle(color: Colors.grey)),
                   Text('[Shift+C]', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                   Text('lear all ', style: TextStyle(color: Colors.grey)),
-                  Text('[O]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
+                  Text('[Shift+O]', style: TextStyle(color: Colors.yellow, fontWeight: FontWeight.bold)),
                   Text('ld only clear', style: TextStyle(color: Colors.grey)),
                 ],
               ],

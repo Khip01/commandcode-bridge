@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3.0 (2026-08-02)
+
+### Features
+
+- Dynamic model list: bridge now fetches the live Command Code model catalog from `/provider/v1/models` on refresh and merges it with the bundled list, so newly released models (e.g. `inclusionai/ling-3.0-flash-free`, `poolside/laguna-s-2.1-free`) appear in `/v1/models` and the TUI without a bridge release
+- Served `/v1/models` endpoint is now dynamic too: it merges the live API list with the bundled registry, so OpenAI/Anthropic clients see newly released Command Code models immediately
+- TUI page 5 (Models): renders the live model list with correct per-plan access grouping (Go/Pro/Max + credits override), showing which models are actually usable on the user's plan
+- TUI page 5 (Models): all "available on your plan" models grouped together at the top, then sub-grouped by usage (Free usage vs Billing) and by provider (DeepSeek, Moonshot, ZAI, MiniMax, Xiaomi, Qwen, StepFun, Tencent, Nvidia, Thinking Machines, OpenAI, xAI, ...); Enter-to-copy stays in sync with the highlighted row
+- TUI page 7 (Cost): pricing grouped by plan access first (Available on Go vs Requires Pro/Max), not by opensource/premium; live-known models without local pricing are shown as "no pricing data" (yellow) instead of being hidden
+- TUI page 7 (Cost): sync result now appears as a status-bar notification (green on success, red on failure) instead of being rendered at the bottom of the page where it could go unnoticed
+- Plan access model mirrors the official CLI (`evaluateModelAccess`): Go = open source + `gpt-5.6-luna`, `xai/grok-4.5`; Pro blocks Fable/Opus + Fugu Ultra; credits override grants everything
+- Expanded bundled model registry from 44 to 52 models (added Kimi-K3, Qwen 3.7 Flash, Gemini 3.6 Flash, Gemini 3.5 Flash Lite, Inkling, Inkling Small, Laguna S 2.1, Ling 3.0 Flash)
+
+### Fixes
+
+- Keymap: `o` now always copies the OpenAI endpoint URL; "Clear entries before today" moved to `Shift+O` (previously `o` in the log panel cleared old logs instead of copying the endpoint)
+
 ## v1.2.0 (2026-07-31)
 
 ### Features

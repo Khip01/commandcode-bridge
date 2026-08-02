@@ -31,13 +31,13 @@ commandcode-bridge/
 │       ├── main.dart                 # CLI wiring (run, run --server, cost-sync, help)
 │       ├── models/
 │       │   ├── account.dart          # Account + config store (port persist)
-│       │   ├── models_db.dart        # 44 models with goAccessible field
+│       │   ├── models_db.dart        # 52 bundled models + PlanAccess rules
 │       │   └── version.dart          # Bridge version constant
 │       ├── services/
-│       │   ├── api_client.dart       # HTTP client for api.commandcode.ai
+│       │   ├── api_client.dart       # HTTP client for api.commandcode.ai (incl. /provider/v1/models)
 │       │   ├── cost_sync.dart        # Cost sync: detect agents, update configs
 │       │   ├── log_store.dart        # JSONL activity log (2000 entries)
-│       │   ├── pricing_db.dart       # Hardcoded pricing table (44 models)
+│       │   ├── pricing_db.dart       # Hardcoded pricing table (52 models)
 │       │   └── updater.dart          # Self-update: API cache + download .tgz + npm install -g
 │       ├── server/
 │       │   ├── server_controller.dart # HTTP server + routing
@@ -167,7 +167,7 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
 | `/v1/chat/completions` | POST | OpenAI-compatible chat completions |
 | `/v1/messages` | POST | Anthropic-compatible Messages API |
 | `/messages` | POST | Anthropic-compatible Messages API (alt path) |
-| `/v1/models` | GET | List 44 available models |
+| `/v1/models` | GET | List available models (live API merged with bundled, 52+) |
 | `/v1/health` | GET | Health check |
 | `/v1/token` | GET | Get access token |
 | `/v1/info` | GET | Bridge info + config |
@@ -217,18 +217,34 @@ npm v11 has a bug installing global git deps: the install appears to succeed (`a
 
 ## Plan Access
 
-Plan model access rules (from cli.mjs):
+Plan model access rules mirror the official Command Code CLI
+(`evaluateModelAccess` in `cli.mjs`). The bridge implements them in
+`PlanAccess` in `models_db.dart`:
 
-| Plan | Allowed Categories | Blocked Premium Models |
-|------|-------------------|----------------------|
-| `individual-go` | opensource only | (all premium blocked) |
-| `individual-pro` | premium + opensource | claude-fable-5, claude-opus-5/4.8/4.7/4.6, sakana/fugu-ultra |
+| Plan | Allowed | Blocked |
+|------|---------|---------|
+| `individual-go` | open source + GPT-5.6 Luna, Grok 4.5, Qwen Max & Plus | all other premium |
+| `individual-pro` | premium + opensource | anthropic:claude-fable-5, claude-opus-5/4.8/4.7/4.6, vercel-ai-gateway:sakana/fugu-ultra |
 | `individual-provider` | premium + opensource | (none) |
 | `individual-max` | premium + opensource | (none) |
 | `individual-ultra` | premium + opensource | (none) |
 | `teams-pro` | premium + opensource | (none) |
 
-Model list in TUI page 5 uses `_orderedModels` (sorted by plan). Go shows opensource first (green), premium dimmed (grey). Pro+ shows premium first.
+**Credits override:** `purchasedCredits > 0` or `freeCredits > 0` grants access
+to every model regardless of plan (matches the CLI).
+
+Model list in TUI page 5 is rendered from the **live model list** (fetched from
+`/provider/v1/models` on refresh, merged with the 52 bundled `ModelsDb` models).
+All "available on your plan" models are grouped together at the top, then
+sub-grouped by usage (Free vs Billing) and by provider. Blocked premium models
+are listed below. Go shows accessible models first (green), blocked premium
+dimmed (grey). Pro+ shows all accessible first. `PlanAccess.isAccessible`
+drives the grouping and honors the credits override. `Enter` copies the
+highlighted model (same `_orderedModels` index used for rendering).
+
+The bridge's own `/v1/models` endpoint also merges the live list so newly
+released models (e.g. `inclusionai/ling-3.0-flash-free`) are served without a
+bridge release.
 
 ## Port
 
@@ -265,7 +281,7 @@ Copy triggers:
 | `2` | Plan & Billing | `/alpha/billing/subscriptions` + `/alpha/billing/credits` | Progress bars for period elapsed, credit usage, individual credit types |
 | `3` | Usage | `/alpha/usage/summary` | Success rate bar, input/output token bars, credit breakdown bars, cost |
 | `4` | Rate Limits | `/alpha/billing/credits` (windowLimits) | 5-hour and weekly usage bars with exceed warnings, remaining, reset times |
-| `5` | Models | `_orderedModels` (sorted by plan, 44 total) | Text list with copy-on-Enter |
+| `5` | Models | Live `/provider/v1/models` merged with 52 bundled models | Text list with copy-on-Enter |
 | `6` | Proxy Config | Bridge state + endpoints | Text info |
 | `7` | Cost Sync | Local config files | Detected agents, model list with pricing, sync status |
 
@@ -292,7 +308,7 @@ Visualization uses `ProgressBar` from nocterm with color-coded fill:
 | `Ctrl+L` | Always | Toggle log sidebar |
 | `f` | Log open | Toggle log fullscreen / sidebar |
 | `Shift+C` | Log open | Clear all logs (with Y/N confirmation) |
-| `O` | Log open | Clear logs before today (with Y/N confirmation) |
+| `Shift+O` | Log open | Clear logs before today (with Y/N confirmation) |
 | `l` | Not auth'd | Open login instructions panel |
 | `Esc` | Sub-panels | Back to main |
 
