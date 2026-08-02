@@ -12,12 +12,20 @@
 | `6` | Proxy Config | Bridge state | Port, API URL, endpoints, uptime |
 | `7` | Cost Sync | Local CLI agent configs | Detected agents, provider list, model pricing, sync status |
 
+## Refresh Behavior
+
+Data is fetched from Command Code only when you press `[r]` (manual foreground
+refresh) or once in the background when you open a page (throttled to once per
+10 seconds). The bridge does not poll the API continuously while you stay on a
+page, so viewing the Models or Cost page does not spam the Command Code
+endpoints.
+
 ## Key Bindings
 
 | Key | Context | Action |
 |-----|---------|--------|
 | `1-7` | Always | Switch info page |
-| `r` | Always | Refresh all API data |
+| `r` | Always | Refresh all API data (manual) |
 | `o` | Always | Copy OpenAI endpoint URL to clipboard |
 | `a` | Always | Copy Anthropic URL to clipboard |
 | `p` | Always | Configure proxy port (with availability scan) |

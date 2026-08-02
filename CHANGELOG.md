@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3.1 (2026-08-02)
+
+### Fixes
+
+- Removed continuous API polling: staying on a TUI page (e.g. Models or Cost)
+  no longer re-fetches Command Code data every few seconds. Data is refreshed
+  once in the background when a page is opened (throttled to once per 10s to
+  avoid spamming the API during rapid page switching) and on manual `[r]`
+  refresh. This avoids hammering the Command Code endpoints just by viewing a
+  page.
+
 ## v1.3.0 (2026-08-02)
 
 ### Features

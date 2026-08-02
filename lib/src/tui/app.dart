@@ -49,6 +49,7 @@ class AppState extends State<CmdBridgeApp> {
   bool _loadingData = false;
   bool _foregroundRefresh = true;
   DateTime? _lastAutoRefreshAt;
+  DateTime? _lastPageOpenRefreshAt;
   int _lastLogVersion = -1;
   int _lastModelVersion = 0;
 
@@ -87,25 +88,6 @@ class AppState extends State<CmdBridgeApp> {
     super.dispose();
   }
 
-  Duration _refreshIntervalForPage(_InfoPage page) {
-    switch (page) {
-      case _InfoPage.account:
-        return const Duration(seconds: 20);
-      case _InfoPage.plan:
-        return const Duration(seconds: 15);
-      case _InfoPage.usage:
-        return const Duration(seconds: 8);
-      case _InfoPage.limits:
-        return const Duration(seconds: 8);
-      case _InfoPage.models:
-        return const Duration(seconds: 30);
-      case _InfoPage.proxy:
-        return const Duration(seconds: 1);
-      case _InfoPage.cost:
-        return const Duration(seconds: 30);
-    }
-  }
-
   void _startActivePageRefresh() {
     _pageRefreshTimer?.cancel();
     _pageRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -123,9 +105,6 @@ class AppState extends State<CmdBridgeApp> {
   void _refreshVisiblePage() {
     if (!mounted || _panel != _Panel.main) return;
 
-    final now = DateTime.now();
-    final interval = _refreshIntervalForPage(_infoPage);
-
     if (_showLog && _lastLogVersion != LogStore.version) {
       _lastLogVersion = LogStore.version;
       setState(() {});
@@ -142,23 +121,28 @@ class AppState extends State<CmdBridgeApp> {
       setState(() {});
       return;
     }
-
-    if (_loadingData) return;
-    if (_lastAutoRefreshAt != null && now.difference(_lastAutoRefreshAt!) < interval) {
-      return;
-    }
-
-    _lastAutoRefreshAt = now;
-    _refreshData(silent: true, foreground: false);
   }
 
   void _setInfoPage(_InfoPage page) {
     _infoPage = page;
     _selectedModelIndex = 0;
     _infoScrollCtrl.jumpTo(0);
-    _lastAutoRefreshAt = null;
     _refreshVisiblePage();
+    _refreshDataOnPageOpen();
     setState(() {});
+  }
+
+  /// Refresh data once in the background when a page is opened, throttled so
+  /// rapid page switching does not spam the Command Code API. Continuous
+  /// per-page polling was removed; use `[r]` for a manual foreground refresh.
+  void _refreshDataOnPageOpen() {
+    final now = DateTime.now();
+    if (_lastPageOpenRefreshAt != null &&
+        now.difference(_lastPageOpenRefreshAt!).inSeconds < 10) {
+      return;
+    }
+    _lastPageOpenRefreshAt = now;
+    _refreshData(silent: true, foreground: false);
   }
 
   Color _notifColor() {
@@ -457,6 +441,10 @@ class AppState extends State<CmdBridgeApp> {
     }
     _loadingData = true;
     _foregroundRefresh = foreground;
+    _lastAutoRefreshAt = DateTime.now();
+    if (foreground) {
+      _lastPageOpenRefreshAt = _lastAutoRefreshAt;
+    }
     if (!silent) {
       _setStatus('Fetching data...');
     }

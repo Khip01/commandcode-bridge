@@ -81,11 +81,12 @@ sync with Command Code pricing.
 ## Dynamic Model List
 
 The bridge does not rely solely on its bundled registry. On every TUI refresh
-(`[r]` or auto-refresh) it calls the official Command Code endpoint
-`GET /provider/v1/models`, caches the result in memory, and merges it with the
-52 bundled `ModelsDb` models. This means newly released models (for example
-`inclusionai/ling-3.0-flash-free`, `poolside/laguna-s-2.1-free`) are served by
-`/v1/models` and shown in the TUI without needing a bridge release.
+(`[r]`, or once in the background when a page is opened) it calls the official
+Command Code endpoint `GET /provider/v1/models`, caches the result in memory,
+and merges it with the 52 bundled `ModelsDb` models. This means newly released
+models (for example `inclusionai/ling-3.0-flash-free`,
+`poolside/laguna-s-2.1-free`) are served by `/v1/models` and shown in the TUI
+without needing a bridge release.
 
 - `api_client.fetchModels()` returns the live model list from the API
 - `ServerController.setLiveModelIds()` updates the in-memory cache used by `/v1/models`
