@@ -496,12 +496,14 @@ class AppState extends State<CmdBridgeApp> {
     final free = credits?.freeCredits ?? 0;
 
     final live = _apiData?.models ?? const <LiveModelInfo>[];
-    final bundledIds = ModelsDb.all.map((m) => m.id).toSet();
+    final bundledNorm = ModelsDb.normalizeAll(ModelsDb.all.map((m) => m.id));
 
     // Live-only models (released after this bridge version) default to
     // go-accessible, matching the CLI's behavior for unknown-category models.
+    // Matching is normalized so casing differences (e.g. `minimaxai/minimax-m3`
+    // vs `MiniMaxAI/MiniMax-M3`) never create duplicates.
     final liveOnly = live
-        .where((m) => !bundledIds.contains(m.id))
+        .where((m) => !bundledNorm.contains(ModelsDb.normalizeModelId(m.id)))
         .map((m) => ModelInfo(
               id: m.id,
               displayName: m.name.isNotEmpty ? m.name : m.id,
@@ -511,11 +513,20 @@ class AppState extends State<CmdBridgeApp> {
         .toList();
 
     final all = [...ModelsDb.all, ...liveOnly];
+    final liveApiIds =
+        live.isEmpty ? null : ModelsDb.normalizeAll(live.map((m) => m.id));
 
-    // Sort so that models accessible on the user's plan come first, then free
-    // usage before billing, then by provider, then by id. This keeps all
-    // "available on Go" models grouped at the top regardless of category.
+    // Sort so that active models come first (accessible on the user's plan,
+    // then free usage before billing, then by provider, then by id). New
+    // models follow active ones, and expired models sink to the very bottom.
+    // Classification is dynamic and mirrors `cmd`'s date-based expiry checks.
     all.sort((a, b) {
+      final statusA = ModelsDb.classify(a.id, liveApiIds: liveApiIds);
+      final statusB = ModelsDb.classify(b.id, liveApiIds: liveApiIds);
+      final rankA = _statusRank(statusA);
+      final rankB = _statusRank(statusB);
+      if (rankA != rankB) return rankA - rankB;
+
       final accA = PlanAccess.isAccessible(
         model: a,
         planId: planId,
@@ -1168,7 +1179,7 @@ class AppState extends State<CmdBridgeApp> {
             add('Your ${_planDisplayName(s.planId)} plan: all models accessible', Colors.green);
           }
         }
-        add('Use [up/down] to scroll, [Enter] to copy model ID. ${ModelsDb.all.length} models total.');
+        add('Use [up/down] to scroll, [Enter] to copy model ID. ${ModelsDb.all.length} models total (new and expired grouped separately).');
         add('');
         break;
 
@@ -1267,9 +1278,17 @@ class AppState extends State<CmdBridgeApp> {
           add('');
         }
 
-        // Filter PricingDb against live API: never display a price for a
-        // model that the bridge cannot actually call.
-        final liveIds = _costLiveModelIds;
+        // Filter PricingDb against live API: never display a price for a model
+        // that the bridge cannot actually call, and skip expired / new (not
+        // yet priced) models so the cost page only shows current offerings.
+        final liveApiIds = _costLiveModelIds.isEmpty
+            ? null
+            : ModelsDb.normalizeAll(_costLiveModelIds);
+        final liveIds = _costLiveModelIds
+            .where((id) =>
+                ModelsDb.classify(id, liveApiIds: liveApiIds) ==
+                ModelStatus.active)
+            .toSet();
         final visibleModels = liveIds.isEmpty
             ? <ModelPricing>[] // API not reachable yet; show nothing
             : PricingDb.all.where((p) => liveIds.contains(p.modelId)).toList();
@@ -1370,20 +1389,34 @@ class AppState extends State<CmdBridgeApp> {
     final credits = _apiData?.credits;
     final purchased = credits?.purchasedCredits ?? 0;
     final free = credits?.freeCredits ?? 0;
+    final live = _apiData?.models ?? const <LiveModelInfo>[];
+    final liveApiIds =
+        live.isEmpty ? null : ModelsDb.normalizeAll(live.map((m) => m.id));
 
-    String? section; // 'accessible' | 'blocked'
+    String? section; // 'accessible' | 'blocked' | 'new' | 'expired'
     String? usage; // 'free' | 'billing'
     String? provider;
 
     for (var i = 0; i < _orderedModels.length; i++) {
       final m = _orderedModels[i];
-      final accessible = PlanAccess.isAccessible(
-        model: m,
-        planId: planId,
-        purchasedCredits: purchased,
-        freeCredits: free,
-      );
-      final curSection = accessible ? 'accessible' : 'blocked';
+      final status = ModelsDb.classify(m.id, liveApiIds: liveApiIds);
+      final isNew = status == ModelStatus.isNew;
+      final expired = status == ModelStatus.expired;
+      final accessible = (isNew || expired)
+          ? false
+          : PlanAccess.isAccessible(
+              model: m,
+              planId: planId,
+              purchasedCredits: purchased,
+              freeCredits: free,
+            );
+      final curSection = isNew
+          ? 'new'
+          : expired
+              ? 'expired'
+              : accessible
+                  ? 'accessible'
+                  : 'blocked';
       final isFreeModel = ModelsDb.isFree(m.id);
       final curUsage = isFreeModel ? 'free' : 'billing';
       final curProvider = ModelsDb.providerOf(m.id);
@@ -1397,6 +1430,16 @@ class AppState extends State<CmdBridgeApp> {
           rows.add(_modelHeader(
             isGo ? 'Models available on Go' : 'Models available on ${_planDisplayName(planId ?? '')}',
             Colors.green,
+          ));
+        } else if (curSection == 'new') {
+          rows.add(_modelHeader(
+            'New / Coming soon (in cmd catalog)',
+            Colors.cyan,
+          ));
+        } else if (curSection == 'expired') {
+          rows.add(_modelHeader(
+            'Expired / No longer provided (kept for history)',
+            Colors.yellow,
           ));
         } else {
           rows.add(_modelHeader(
@@ -1438,16 +1481,23 @@ class AppState extends State<CmdBridgeApp> {
       final reas = m.reasoningEfforts.isNotEmpty
           ? ' [reasoning: ${m.reasoningEfforts.join(",")}]'
           : '';
-      final label = accessible ? '' : ' [Not on Go]';
+      final label = isNew
+          ? ' [New]'
+          : expired
+              ? ' [Expired]'
+              : accessible
+                  ? ''
+                  : ' [Not on Go]';
+      final dim = !accessible && !isNew;
       rows.add(Padding(
         padding: const EdgeInsets.only(left: 6),
         child: Text('$prefix${m.id}  (${ctx}ctx$reas)$label',
             style: TextStyle(
               color: i == _selectedModelIndex
                   ? Colors.cyan
-                  : accessible
-                      ? null
-                      : Colors.grey,
+                  : dim
+                      ? Colors.grey
+                      : null,
             )),
       ));
     }
@@ -1458,6 +1508,17 @@ class AppState extends State<CmdBridgeApp> {
         padding: const EdgeInsets.symmetric(vertical: 0),
         child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
       );
+
+  int _statusRank(ModelStatus status) {
+    switch (status) {
+      case ModelStatus.active:
+        return 0;
+      case ModelStatus.isNew:
+        return 1;
+      case ModelStatus.expired:
+        return 2;
+    }
+  }
 
   String _planDisplayName(String planId) {
     if (planId.startsWith('individual-')) {
@@ -1835,7 +1896,17 @@ class AppState extends State<CmdBridgeApp> {
         return;
       }
 
-      final result = CostSyncService.syncCosts(agent.type, models);
+      // Only sync current offerings: skip expired and new (not yet priced)
+      // models so pricing never gets written for models that cannot be used.
+      final liveApiIds = _costLiveModelIds.isEmpty
+          ? null
+          : ModelsDb.normalizeAll(_costLiveModelIds);
+      final active = models
+          .where((id) =>
+              ModelsDb.classify(id, liveApiIds: liveApiIds) ==
+              ModelStatus.active)
+          .toList();
+      final result = CostSyncService.syncCosts(agent.type, active);
       _costSyncing = false;
       LogStore.info('Cost sync ${agent.displayName}: ${result.updated} updated, ${result.skipped} skipped');
       final summary = 'Cost sync ${agent.displayName}: '

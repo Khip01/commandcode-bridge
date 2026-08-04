@@ -19,6 +19,20 @@ class ModelInfo {
   static const proAccessible = false;
 }
 
+/// Current availability of a model, computed dynamically (never hardcoded).
+enum ModelStatus {
+  /// Offered by the current Command Code catalog.
+  active,
+
+  /// Present in the live API but absent from the bundled registry: newly
+  /// released (or renamed) and not yet bundled locally.
+  isNew,
+
+  /// No longer provided (free promotion ended or dropped from the catalog),
+  /// kept for history and grouped at the bottom of the models page.
+  expired,
+}
+
 class ModelsDb {
   static final List<ModelInfo> all = [
     // === Premium - Anthropic ===
@@ -411,6 +425,71 @@ class ModelsDb {
   };
 
   static bool isFree(String id) => freeModels.contains(id);
+
+  /// Normalize a model ID for comparison: lowercase and strip a trailing
+  /// `-YYYYMMDD` date suffix. This mirrors the official CLI, which treats
+  /// `claude-haiku-4-5-20251001` and `claude-haiku-4-5` as the same model.
+  static String normalizeModelId(String id) {
+    final lower = id.trim().toLowerCase();
+    return lower.replaceFirst(RegExp(r'-?\d{8}$'), '');
+  }
+
+  /// Normalize an iterable of model IDs for comparison.
+  static Set<String> normalizeAll(Iterable<String> ids) =>
+      ids.map(normalizeModelId).toSet();
+
+  /// UTC timestamps after which a model is no longer provided by Command Code.
+  ///
+  /// This mirrors the official CLI's date-based expiry checks (for example the
+  /// bundled `isLingFlashFreeEnded()`, which hides a model once the current
+  /// date passes `2026-08-03T13:00:00Z`). The bridge evaluates the same
+  /// schedule dynamically against the current time instead of maintaining a
+  /// hardcoded "removed" list. Keys are normalized model IDs.
+  static const Map<String, String> modelExpiryUtc = {
+    'inclusionai/ling-3.0-flash-free': '2026-08-03T13:00:00Z',
+  };
+
+  /// Whether the model's free promotion has ended (now >= expiry), mirroring
+  /// the CLI's `isLingFlashFreeEnded()`-style checks.
+  static bool isExpiredByTime(String id, {DateTime? now}) {
+    final expiry = modelExpiryUtc[normalizeModelId(id)];
+    if (expiry == null) return false;
+    final parsed = DateTime.tryParse(expiry)?.toUtc();
+    if (parsed == null) return false;
+    final current = (now ?? DateTime.now()).toUtc();
+    return !current.isBefore(parsed);
+  }
+
+  /// Classify a model dynamically.
+  ///
+  /// - `expired` when the model's promo has ended by timestamp, OR (when the
+  ///   live API catalog is known) it is bundled but absent from the current
+  ///   Command Code catalog.
+  /// - `isNew` when (with a known live catalog) the model appears in the API
+  ///   but is not in the bundled registry: newly released or renamed.
+  /// - otherwise `active`.
+  ///
+  /// With an unknown live catalog the bridge still honors the timestamp-based
+  /// expiry so expired promos are never advertised as active.
+  static ModelStatus classify(
+    String id, {
+    Set<String>? liveApiIds,
+    DateTime? now,
+  }) {
+    if (isExpiredByTime(id, now: now)) return ModelStatus.expired;
+
+    if (liveApiIds != null) {
+      final normalized = normalizeModelId(id);
+      if (!liveApiIds.contains(normalized)) {
+        // Bundled but dropped from the current Command Code catalog.
+        if (ModelsDb.byId(id) != null) return ModelStatus.expired;
+        return ModelStatus.active;
+      }
+      // Present in the API but absent from the bundled registry.
+      if (ModelsDb.byId(id) == null) return ModelStatus.isNew;
+    }
+    return ModelStatus.active;
+  }
 }
 
 /// Plan-access rules mirroring the official Command Code CLI (`evaluateModelAccess`

@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3.2 (2026-08-04)
+
+### Features
+
+- Dynamic model classification mirrors the official `cmd` CLI instead of a
+  hardcoded list. Availability is computed at runtime:
+  - Expired models (free promotion ended by timestamp, or bundled but dropped
+    from the current Command Code catalog) are kept in the registry for history
+    but grouped into an "Expired / No longer provided (kept for history)"
+    section at the very bottom of TUI page 5, tagged `[Expired]`
+  - Newly released models present in the live API but absent from the bundled
+    registry appear in a "New / Coming soon (in cmd catalog)" section above the
+    expired ones, tagged `[New]`; they stay fully dynamic with no code change
+  - Model ID comparison is case-insensitive and strips `-YYYYMMDD` date suffixes
+    (e.g. `claude-haiku-4-5-20251001` == `claude-haiku-4-5`), mirroring the CLI
+  - The free-promo expiry schedule (`modelExpiryUtc`) follows the CLI's own
+    date-based checks such as `isLingFlashFreeEnded()` (`2026-08-03T13:00:00Z`)
+- `/v1/models` (OpenAI/Anthropic clients) no longer advertises expired models:
+  the bridge never serves a model that Command Code no longer provides, while
+  still merging new live releases immediately
+- TUI page 7 (Cost): expired and new models are excluded from pricing display
+  and from cost sync, so pricing is only written for current offerings
+
 ## v1.3.1 (2026-08-02)
 
 ### Fixes

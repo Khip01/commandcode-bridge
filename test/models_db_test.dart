@@ -161,6 +161,73 @@ void main() {
         expect(ModelsDb.isFree('deepseek/deepseek-v4-pro'), isFalse);
       });
 
+      test('normalizeModelId lowercases and strips date suffix', () {
+        expect(ModelsDb.normalizeModelId('claude-haiku-4-5-20251001'),
+            'claude-haiku-4-5');
+        expect(ModelsDb.normalizeModelId('MiniMaxAI/MiniMax-M3'),
+            'minimaxai/minimax-m3');
+        expect(
+            ModelsDb.normalizeModelId('claude-haiku-4-5'), 'claude-haiku-4-5');
+      });
+
+      test('isExpiredByTime reflects passed promo expiry', () {
+        final now = DateTime.utc(2026, 8, 4);
+        expect(ModelsDb.isExpiredByTime('inclusionai/ling-3.0-flash-free', now: now), isTrue);
+        expect(ModelsDb.isExpiredByTime('deepseek/deepseek-v4-pro', now: now), isFalse);
+      });
+
+      test('ling is not expired before its promo end', () {
+        final before = DateTime.utc(2026, 8, 1);
+        expect(
+            ModelsDb.isExpiredByTime(
+                'inclusionai/ling-3.0-flash-free', now: before),
+            isFalse);
+      });
+
+      test('classify renames haiku 4.5 as active via normalization', () {
+        // claude-haiku-4-5-20251001 and claude-haiku-4-5 are the same model.
+        final live = ModelsDb.normalizeAll([
+          'claude-haiku-4-5',
+          'inclusionai/ling-3.0-flash-free',
+        ]);
+        expect(
+            ModelsDb.classify('claude-haiku-4-5-20251001', liveApiIds: live),
+            ModelStatus.active);
+      });
+
+      test('classify marks dropped bundled model as expired', () {
+        // A bundled model absent from the live catalog is expired.
+        final live = ModelsDb.normalizeAll(['claude-sonnet-5', 'gpt-5.5']);
+        expect(
+            ModelsDb.classify('deepseek/deepseek-v4-pro', liveApiIds: live),
+            ModelStatus.expired);
+      });
+
+      test('classify marks API-only model as new', () {
+        // A model present in the API but not bundled is new.
+        final live = ModelsDb.normalizeAll(['qwen/qwen3.8-max']);
+        expect(
+            ModelsDb.classify('qwen/qwen3.8-max', liveApiIds: live),
+            ModelStatus.isNew);
+      });
+
+      test('classify falls back to active when live catalog unknown', () {
+        expect(
+            ModelsDb.classify('claude-sonnet-5', liveApiIds: null),
+            ModelStatus.active);
+      });
+
+      test('classify marks time-expired model as expired regardless of live set', () {
+        final now = DateTime.utc(2026, 8, 4);
+        expect(
+            ModelsDb.classify('inclusionai/ling-3.0-flash-free',
+                liveApiIds: ModelsDb.normalizeAll([
+                  'inclusionai/ling-3.0-flash-free',
+                ]), now: now),
+            ModelStatus.expired,
+            reason: 'time-expired models are never advertised as active');
+      });
+
       test('providerRank orders open source before premium', () {
         expect(
           ModelsDb.providerRank('deepseek/deepseek-v4-pro'),

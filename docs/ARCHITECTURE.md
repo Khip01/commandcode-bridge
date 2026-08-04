@@ -83,10 +83,9 @@ sync with Command Code pricing.
 The bridge does not rely solely on its bundled registry. On every TUI refresh
 (`[r]`, or once in the background when a page is opened) it calls the official
 Command Code endpoint `GET /provider/v1/models`, caches the result in memory,
-and merges it with the 52 bundled `ModelsDb` models. This means newly released
-models (for example `inclusionai/ling-3.0-flash-free`,
-`poolside/laguna-s-2.1-free`) are served by `/v1/models` and shown in the TUI
-without needing a bridge release.
+and merges it with the bundled `ModelsDb` models. This means newly released
+models (for example `Qwen/Qwen3.8-Max`) are served by `/v1/models` and shown in
+the TUI without needing a bridge release.
 
 - `api_client.fetchModels()` returns the live model list from the API
 - `ServerController.setLiveModelIds()` updates the in-memory cache used by `/v1/models`
@@ -95,6 +94,18 @@ without needing a bridge release.
   mirrors the official CLI's `evaluateModelAccess`: Go = open source + GPT-5.6
   Luna / Grok 4.5, Pro blocks Fable/Opus + Fugu Ultra, and a credits override
   (purchased or free credits) grants access to everything
+- Model availability is classified dynamically via `ModelsDb.classify`, mirroring
+  the CLI (no hardcoded list):
+  - `expired`: free promotion ended by timestamp (`ModelsDb.modelExpiryUtc`, the
+    same date-based checks the CLI ships, e.g. `isLingFlashFreeEnded()`), or
+    bundled but dropped from the current Command Code catalog. Kept in the
+    registry for history, grouped at the bottom of TUI page 5, excluded from
+    `/v1/models` and TUI page 7 (Cost).
+  - `isNew`: present in the live API but absent from the bundled registry
+    (newly released or renamed), shown in a "New / Coming soon" section above
+    expired ones, excluded from cost display/sync.
+  - comparison is case-insensitive and strips `-YYYYMMDD` suffixes
+    (`claude-haiku-4-5-20251001` == `claude-haiku-4-5`)
 
 ## Protocol Translation
 

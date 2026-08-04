@@ -22,7 +22,7 @@ class ServerController {
 
   /// Live model IDs fetched from the Command Code API by the TUI on refresh.
   /// `/v1/models` merges these with `ModelsDb.all` so newly released models
-  /// (e.g. ling-3.0-flash-free) are advertised even before a bridge release.
+  /// are advertised even before a bridge release.
   List<String> _liveModelIds = const [];
   List<String> get liveModelIds => _liveModelIds;
 
@@ -157,9 +157,17 @@ class ServerController {
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final byId = <String, Map<String, dynamic>>{};
     final known = <String>{};
+    final liveApiIds = _liveModelIds.isEmpty
+        ? null
+        : ModelsDb.normalizeAll(_liveModelIds);
 
     for (final m in ModelsDb.all) {
-      known.add(m.id);
+      // Mirror the CLI: never advertise models that are expired (free promo
+      // ended by timestamp, or dropped from the current Command Code catalog).
+      // Hidden models are kept in the registry for history but not served.
+      final status = ModelsDb.classify(m.id, liveApiIds: liveApiIds);
+      if (status == ModelStatus.expired) continue;
+      known.add(ModelsDb.normalizeModelId(m.id));
       byId[m.id] = {
         'id': m.id,
         'object': 'model',
@@ -171,19 +179,24 @@ class ServerController {
     }
 
     // Merge live models from the Command Code API so new releases are
-    // advertised even without a bridge update. Unknown live models default to
-    // `owned_by: command-code` and are still proxyable.
+    // advertised even without a bridge update (Q2: new models stay dynamic).
+    // Unknown live models default to `owned_by: command-code` and are still
+    // proxyable. Expired ones are already excluded above, and must also be
+    // skipped here: the live catalog may still list a model whose promo ended
+    // (e.g. ling-3.0-flash-free), and it must not be re-advertised.
     for (final id in _liveModelIds) {
-      if (!known.contains(id)) {
-        byId[id] = {
-          'id': id,
-          'object': 'model',
-          'created': now,
-          'owned_by': 'command-code',
-          'name': id,
-          'context_length': 0,
-        };
-      }
+      if (ModelsDb.isExpiredByTime(id)) continue;
+      final norm = ModelsDb.normalizeModelId(id);
+      if (known.contains(norm)) continue;
+      known.add(norm);
+      byId[id] = {
+        'id': id,
+        'object': 'model',
+        'created': now,
+        'owned_by': 'command-code',
+        'name': id,
+        'context_length': 0,
+      };
     }
 
     final models = byId.values.toList()

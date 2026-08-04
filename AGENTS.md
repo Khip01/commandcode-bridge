@@ -234,7 +234,16 @@ Plan model access rules mirror the official Command Code CLI
 to every model regardless of plan (matches the CLI).
 
 Model list in TUI page 5 is rendered from the **live model list** (fetched from
-`/provider/v1/models` on refresh, merged with the 52 bundled `ModelsDb` models).
+`/provider/v1/models` on refresh, merged with the bundled `ModelsDb` models).
+Availability is classified dynamically via `ModelsDb.classify`, mirroring the
+CLI (no hardcoded model list):
+- **Expired** (free promo ended by timestamp via `modelExpiryUtc`, or bundled
+  but dropped from the current catalog) are kept in the registry for history but
+  grouped into an "Expired / No longer provided (kept for history)" section at
+  the very bottom, tagged `[Expired]`.
+- **New** (present in the live API but absent from the bundled registry, e.g.
+  `Qwen/Qwen3.8-Max`) appear in a "New / Coming soon" section above expired
+  ones, tagged `[New]`, and stay dynamic.
 All "available on your plan" models are grouped together at the top, then
 sub-grouped by usage (Free vs Billing) and by provider. Blocked premium models
 are listed below. Go shows accessible models first (green), blocked premium
@@ -242,9 +251,11 @@ dimmed (grey). Pro+ shows all accessible first. `PlanAccess.isAccessible`
 drives the grouping and honors the credits override. `Enter` copies the
 highlighted model (same `_orderedModels` index used for rendering).
 
-The bridge's own `/v1/models` endpoint also merges the live list so newly
-released models (e.g. `inclusionai/ling-3.0-flash-free`) are served without a
-bridge release.
+The bridge's own `/v1/models` endpoint merges the live list so newly released
+models are served without a bridge release, but it never advertises expired
+models (mirroring the CLI). Model comparison is case-insensitive and strips
+`-YYYYMMDD` date suffixes (`claude-haiku-4-5-20251001` == `claude-haiku-4-5`).
+TUI page 7 (Cost) excludes expired and new models from display and sync.
 
 ## Port
 

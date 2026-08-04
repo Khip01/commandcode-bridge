@@ -8,7 +8,7 @@
 | `2` | Plan & Billing | `/alpha/billing/subscriptions` + credits | Progress bars for billing period, credit usage |
 | `3` | Usage | `/alpha/usage/summary` | Success rate bar, token bars, cost breakdown |
 | `4` | Rate Limits | `/alpha/billing/credits` | 5-hour and weekly usage bars with exceed warnings |
-| `5` | Models | Live API + 52 bundled models, sorted by plan access | Scrollable list, Enter to copy codename |
+| `5` | Models | Live API + bundled models, dynamic availability (active / new / expired) | Scrollable list, Enter to copy codename |
 | `6` | Proxy Config | Bridge state | Port, API URL, endpoints, uptime |
 | `7` | Cost Sync | Local CLI agent configs | Detected agents, provider list, model pricing, sync status |
 
@@ -65,8 +65,13 @@ The switch is logged and the running port is shown in the header.
 ## Plan Access
 
 Page 5 renders the **live model list** (fetched from `/provider/v1/models` on
-refresh, merged with 52 bundled models) and groups models by what your plan can
-actually use. Rules mirror the official Command Code CLI:
+refresh, merged with bundled models) and groups models by what your plan can
+actually use. Availability is classified dynamically via `ModelsDb.classify`,
+mirroring the CLI (no hardcoded list): active models first, then a "New /
+Coming soon" section (newly released, in the API but not yet bundled), then an
+"Expired / No longer provided" section at the very bottom (free promo ended by
+timestamp or dropped from the catalog). Rules mirror the official Command Code
+CLI:
 
 | Plan | Accessible |
 |------|-----------|
