@@ -7,10 +7,21 @@
 | `1` | Account | `/alpha/whoami` | Text info (name, email, user ID) |
 | `2` | Plan & Billing | `/alpha/billing/subscriptions` + credits | Progress bars for billing period, credit usage |
 | `3` | Usage | `/alpha/usage/summary` | Success rate bar, token bars, cost breakdown |
-| `4` | Rate Limits | `/alpha/billing/credits` | 5-hour and weekly usage bars with exceed warnings |
+| `4` | Rate Limits | `/alpha/billing/credits` | 5-hour and weekly usage bars with exceed warnings, remaining, reset time |
 | `5` | Models | Live API + bundled models, dynamic availability (active / new / expired) | Scrollable list, Enter to copy codename |
 | `6` | Proxy Config | Bridge state | Port, API URL, endpoints, uptime |
 | `7` | Cost Sync | Local CLI agent configs | Detected agents, provider list, model pricing, sync status |
+
+### Rate Limit Reset Time
+
+Each limit window shows a `Reset at:` line. When the window has no usage yet
+(the Command Code API returns `resetAt: 0`), the line reads
+`Reset at: N/A start using to begin countdown`, where `N/A` matches the grey
+label color and the hint is dimmed italic so it does not draw attention while
+the countdown is inactive. Once the window has a real `resetAt`, the line
+shows the scheduled reset time and a relative countdown in the same grey style
+as the label, mirroring the official `cmd` CLI which only reports a reset
+clock for a valid, future timestamp.
 
 ## Refresh Behavior
 
