@@ -98,7 +98,7 @@ class WindowLimitData {
         resetAt: (json['resetAt'] as num?)?.toInt() ?? 0,
       );
 
-  DateTime get resetTime => DateTime.fromMillisecondsSinceEpoch(resetAt);
+  DateTime? get resetTime => resetAt > 0 ? DateTime.fromMillisecondsSinceEpoch(resetAt) : null;
   double get remaining => cap - used;
 }
 

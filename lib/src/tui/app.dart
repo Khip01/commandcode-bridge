@@ -1122,8 +1122,7 @@ class AppState extends State<CmdBridgeApp> {
                   Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ]),
               SizedBox(height: 1),
-              Text('  Resets at: ${_fmtDate(c.fiveHour.resetTime)}  ${_relativeTime(c.fiveHour.resetTime)}',
-                  style: TextStyle(color: Colors.grey)),
+              _resetLine(c.fiveHour),
             ]),
           ));
         } else {
@@ -1152,8 +1151,7 @@ class AppState extends State<CmdBridgeApp> {
                   Text('EXCEEDED', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ]),
               SizedBox(height: 1),
-              Text('  Resets at: ${_fmtDate(c.weekly.resetTime)}  ${_relativeTime(c.weekly.resetTime)}',
-                  style: TextStyle(color: Colors.grey)),
+              _resetLine(c.weekly),
             ]),
           ));
         } else {
@@ -2024,6 +2022,27 @@ class AppState extends State<CmdBridgeApp> {
   String _fmtDate(DateTime? dt) {
     if (dt == null) return 'N/A';
     return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  Component _resetLine(WindowLimitData w) {
+    final reset = w.resetTime;
+    if (reset == null) {
+      return RichText(
+        text: TextSpan(children: [
+          const TextSpan(
+              text: '  Reset at: N/A ', style: TextStyle(color: Colors.grey)),
+          TextSpan(
+            text: 'start using to begin countdown',
+            style: TextStyle(
+              color: Colors.brightBlack,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ]),
+      );
+    }
+    return Text('  Reset at: ${_fmtDate(reset)}  ${_relativeTime(reset)}',
+        style: TextStyle(color: Colors.grey));
   }
 
   String _relativeTime(DateTime target) {

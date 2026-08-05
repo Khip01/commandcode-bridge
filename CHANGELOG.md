@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixes
+
+- TUI page 4 (Rate Limits) no longer renders an epoch reset timestamp
+  (`1970-01-01`) when a limit window has not started yet (API returns
+  `resetAt: 0`). When a window has no usage yet, the reset line reads
+  `Reset at: N/A start using to begin countdown`: the `N/A` shares the grey
+  color of the `Reset at:` label and the hint is rendered dimmed italic
+  (`brightBlack`, via RichText) so it does not draw attention while the
+  countdown is inactive. Once the window has a real `resetAt`, the line renders
+  the scheduled reset time and relative countdown in the same grey style as the
+  label, so only the active countdown is emphasized. This mirrors the official
+  `cmd` CLI which only shows a reset clock for a valid, future reset timestamp.
+
 ## v1.3.2 (2026-08-04)
 
 ### Features
